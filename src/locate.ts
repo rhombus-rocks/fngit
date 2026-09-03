@@ -115,7 +115,7 @@ async function locateBareName(ref: RepoRef, settings: LocateSettings, home: stri
 
   const inSrcDirs = searchSrcDirs(ref, null, settings, home);
   if (inSrcDirs.length) {
-    return resolveDiskHit(inSrcDirs.map((path) => ({ path, owner: ref.owner })), ref);
+    return resolveDiskHit(inSrcDirs, ref);
   }
 
   const owner = await findOwner({ name: ref.name, api: (path) => gh.api(path) });
@@ -161,14 +161,14 @@ function locateWithOwner(ref: RepoRef, settings: LocateSettings, home: string, s
     // A resolved owner matches at most one path per root, so this can't be ambiguous.
     const inSrcDirs = searchSrcDirs(ref, ref.owner, settings, home);
     if (inSrcDirs.length) {
-      return { type: 'local', path: inSrcDirs[0]!, ref };
+      return { type: 'local', path: inSrcDirs[0]!.path, ref };
     }
   }
 
   return { type: 'remote', url: buildCloneUrl(ref), destination: destination.path, ref };
 }
 
-function searchSrcDirs(ref: RepoRef, owner: string | null, settings: LocateSettings, home: string): string[] {
+function searchSrcDirs(ref: RepoRef, owner: string | null, settings: LocateSettings, home: string): LocalClone[] {
   return findInSrcDirs({ name: ref.name, owner, srcDirs: settings.additionalSrcDirs,
     cloneTemplate: settings.cloneTemplate, worktreeTemplate: settings.worktreeTemplate, host: effectiveHost(ref),
     hostAliases: settings.hostAliases, home });
