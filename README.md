@@ -17,6 +17,108 @@ straight through unchanged.
 npm install @rhombus.rocks/fngit
 ```
 
+## API
+
+### `locate`
+
+```ts
+import { locate } from '@rhombus.rocks/fngit';
+
+const repo = await locate('fnclaude', { clone: true });
+repo.path; // the checkout on disk
+```
+
+`locate(input, options)` resolves to a `Located`, or rejects with a
+[`LocateError`](#locateerror).
+
+```ts
+type Located = { type: 'local'; path: string; ref: RepoRef; } | {
+  type: 'remote';
+  url: string;
+  destination: string;
+  ref: RepoRef;
+};
+```
+
+`local` means a checkout already exists at `path`. `remote` means it doesn't:
+`url` is where it would be fetched from and `destination` where it would land.
+With `clone: true` a `remote` result is cloned first, so the call always
+resolves `local`.
+
+`ref` is the parsed reference — `host`, `owner`, `name`, `workspace`,
+`original`. Its `workspace` is carried through untouched and never affects the
+destination; a `+workspace` suffix names a worktree beside the clone, not a
+different clone.
+
+### Options
+
+| Field       | Default               | Meaning                                                                    |
+| ----------- | --------------------- | -------------------------------------------------------------------------- |
+| `clone`     | `false`               | Clone a `remote` result before returning, so the result is always `local`. |
+| `settings`  | none                  | Per-field overlay on whatever the settings chain supplies.                 |
+| `cwd`       | `process.cwd()`       | Root for the project settings tier.                                        |
+| `home`      | `os.homedir()`        | Root for `~` expansion and the user settings tier.                         |
+| `gh`        | the real `gh` spawner | An `IGitHubCli` to call instead; inject a fake in tests.                   |
+| `cloneArgs` | none                  | Extra arguments for `git clone`, honoured only alongside `clone`.          |
+
+### Resolution order
+
+1. Parse the reference. Accepted forms are `<name>`, `<name>@<owner>`,
+   `<owner>/<name>`, `gh:<owner>/<name>`, an `https://`/`http://`/`ssh://` URL
+   and the `git@host:owner/name` form, each with an optional `+workspace`
+   suffix.
+2. Load the settings chain, then apply the `settings` overlay field by field.
+3. For a bare name, before any network call:
+   1. scan the clone template's own root with `{owner}` wildcarded, excluding
+      worktree siblings — one hit resolves `local`, several are ambiguous;
+   2. search `additionalSrcDirs`, each entry twice: `<dir>/<name>`, then the
+      clone template's last segment re-rooted there;
+   3. ask `gh` who owns it — the authenticated user first, then each
+      organization in API order. Every candidate is probed, so a name two
+      owners share is ambiguous rather than silently resolved.
+4. With the owner known, compute the destination from `cloneTemplate`. If it
+   exists, that is the `local` result. Otherwise search `additionalSrcDirs`
+   once more for that exact owner. Otherwise the result is `remote`.
+5. With `clone: true`, create the destination's parent and clone into it.
+
+The clone template's root outranks `additionalSrcDirs` at every step, so a repo
+present in both is never reported ambiguous. Those extra roots are search-only
+and never become a clone destination.
+
+### `LocateError`
+
+Every failure rejects with a `LocateError` carrying a structured `failure`, so
+a caller can branch on the reason rather than parse the message.
+
+| `failure.reason`  | Raised when                                                                                                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `unparseable`     | The input matches none of the accepted reference forms.                                                               |
+| `config`          | No `cloneTemplate` is configured, or expanding it failed — an unknown placeholder, or a `{host-short}` with no alias. |
+| `gh-failed`       | The owner lookup could not reach `gh` at all.                                                                         |
+| `not-found`       | No owner reachable through `gh` has a repo by that name.                                                              |
+| `ambiguous-owner` | Several owners have it; `owners` lists them.                                                                          |
+| `ambiguous-local` | Several checkouts on disk match; `paths` lists them.                                                                  |
+| `clone-failed`    | The clone itself failed; `repoNotFound` says whether the repo simply doesn't exist.                                   |
+
+### Settings
+
+`loadLocateSettings({ home, cwd })` reads the `repoSettings` block of four
+tiers, later ones winning field by field:
+
+1. `<home>/.claude/settings.json`
+2. `<cwd>/.claude/settings.json`
+3. `<cwd>/.claude/settings.local.json`
+4. `/etc/claude-code/managed-settings.json`
+
+It reads `cloneTemplate`, `worktreeTemplate` and `additionalSrcDirs` — the last
+accepting a single path or a list, and replacing rather than extending a lower
+tier. Every failure degrades silently: an unreadable, malformed or
+wrong-shaped file contributes nothing rather than failing the lookup.
+
+Host aliases for the `{host-short}` placeholder come from
+`/usr/share/fnrhombus/host-aliases.json` and then
+`~/.local/share/fnrhombus/host-aliases.json`, the user's keys winning.
+
 ## Development
 
 Toolchain is pinned via [mise](https://mise.jdx.dev/) — running any command

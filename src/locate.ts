@@ -1,0 +1,167 @@
+import { assertNever } from '@rhombus-toolkit/type-guards';
+import { statSync } from 'node:fs';
+import { homedir } from 'node:os';
+
+import { buildCloneUrl, cloneRepo, computeCloneDestination, isRepoNotFoundError } from './clone.js';
+import { GitHubCli, type IGitHubCli } from './IGitHubCli.js';
+import { findLocalClones } from './local-clones.js';
+import { LocateError } from './LocateError.js';
+import { findOwner } from './owner-lookup.js';
+import { effectiveHost, hasResolvedOwner, parseRepoRef, type RepoRef } from './RepoRef.js';
+import { loadLocateSettings, type LocateSettings } from './settings.js';
+import { findInSrcDirs } from './src-dirs.js';
+
+/** A repository that already exists on disk. */
+export type LocalRepo = { type: 'local'; path: string; ref: RepoRef; };
+
+/** A repository that isn't on disk yet, and where it would be cloned from and to. */
+export type RemoteRepo = { type: 'remote'; url: string; destination: string; ref: RepoRef; };
+
+export type Located = LocalRepo | RemoteRepo;
+
+export interface LocateOptions {
+  /** Clone a `remote` result to its destination before returning, so the result is always `local`. */
+  clone?: boolean;
+  /** Per-field overlay on whatever the settings chain supplies. */
+  settings?: Partial<LocateSettings>;
+  /** Root for the project settings tier; defaults to the process's working directory. */
+  cwd?: string;
+  /** Root for `~` expansion and the user settings tier; defaults to the current user's home. */
+  home?: string;
+  gh?: IGitHubCli;
+  /** Extra arguments for `git clone`, honoured only alongside `clone`. */
+  cloneArgs?: readonly string[];
+}
+
+export function locate(input: string, options: LocateOptions & { clone: true; }): Promise<LocalRepo>;
+export function locate(input: string, options?: LocateOptions): Promise<Located>;
+
+/**
+ * Resolve a user-typed repo reference to the checkout it names, preferring
+ * whatever is already on disk and falling back to where it would be cloned
+ * from.
+ *
+ * @throws LocateError with a {@link LocateError.failure} saying which of the
+ * resolution steps gave out.
+ */
+export async function locate(input: string, options: LocateOptions = {}): Promise<Located> {
+  const parsed = parseRepoRef(input);
+  if (!parsed.ok) {
+    throw new LocateError({ reason: 'unparseable', input, message: parsed.error });
+  }
+
+  const home = options.home ?? homedir();
+  const settings = overlaySettings(loadLocateSettings({ home, cwd: options.cwd ?? process.cwd() }), options.settings);
+  const gh = options.gh ?? new GitHubCli();
+
+  const located = hasResolvedOwner(parsed.ref)
+    ? locateWithOwner(parsed.ref, settings, home)
+    : await locateBareName(parsed.ref, settings, home, gh);
+
+  if (options.clone !== true || located.type === 'local') {
+    return located;
+  }
+
+  const cloned = await cloneRepo({ url: located.url, destination: located.destination, gh,
+    cloneArgs: options.cloneArgs });
+  if (!cloned.ok) {
+    throw new LocateError({ reason: 'clone-failed', ref: located.ref, url: located.url,
+      destination: located.destination, stderr: cloned.stderr, repoNotFound: isRepoNotFoundError(cloned.stderr) });
+  }
+  return { type: 'local', path: located.destination, ref: located.ref };
+}
+
+function overlaySettings(base: LocateSettings, overlay: Partial<LocateSettings> = {}): LocateSettings {
+  return { cloneTemplate: overlay.cloneTemplate ?? base.cloneTemplate,
+    worktreeTemplate: overlay.worktreeTemplate ?? base.worktreeTemplate,
+    additionalSrcDirs: overlay.additionalSrcDirs ?? base.additionalSrcDirs,
+    hostAliases: overlay.hostAliases ?? base.hostAliases };
+}
+
+/**
+ * A name with no owner, settled by disk first — the clone template's own root,
+ * then the extra source roots — and only then by asking GitHub who owns it.
+ */
+async function locateBareName(ref: RepoRef, settings: LocateSettings, home: string, gh: IGitHubCli): Promise<Located> {
+  const clones = findLocalClones({ name: ref.name, template: settings.cloneTemplate,
+    worktreeTemplate: settings.worktreeTemplate, host: effectiveHost(ref), hostAliases: settings.hostAliases, home });
+  if (clones.ok && clones.paths.length) {
+    return oneOrAmbiguous(clones.paths, ref);
+  }
+
+  const inSrcDirs = searchSrcDirs(ref, null, settings, home);
+  if (inSrcDirs.length) {
+    return oneOrAmbiguous(inSrcDirs, ref);
+  }
+
+  const owner = await findOwner({ name: ref.name, api: (path) => gh.api(path) });
+  if (owner.ok) {
+    return locateWithOwner({ ...ref, owner: owner.owner }, settings, home);
+  }
+  switch (owner.reason) {
+    case 'gh-failed': {
+      throw new LocateError({ reason: 'gh-failed',
+        message: `bare name "${ref.name}" — gh CLI lookup failed (not authenticated? no network?). `
+          + `Try \`gh auth login\` or pass the owner explicitly (\`${ref.name}@<owner>\`).` });
+    }
+    case 'not-found': {
+      throw new LocateError({ reason: 'not-found', ref });
+    }
+    case 'ambiguous': {
+      throw new LocateError({ reason: 'ambiguous-owner', ref, owners: owner.owners });
+    }
+    default: {
+      return assertNever(owner);
+    }
+  }
+}
+
+/**
+ * A reference whose owner is known: the templated destination if it exists, an
+ * extra source root if one holds it, and otherwise the clone that would create
+ * it.
+ */
+function locateWithOwner(ref: RepoRef, settings: LocateSettings, home: string): Located {
+  if (settings.cloneTemplate === '') {
+    throw new LocateError({ reason: 'config',
+      message: 'cloneTemplate is not configured in repoSettings; cannot resolve repo references. '
+        + 'Set repoSettings.cloneTemplate in ~/.claude/settings.json (e.g. "~/src/{repo}@{owner}")' });
+  }
+  const destination = computeCloneDestination({ ref, template: settings.cloneTemplate,
+    hostAliases: settings.hostAliases, home });
+  if (!destination.ok) {
+    throw new LocateError({ reason: 'config', message: destination.error });
+  }
+  if (isDirectory(destination.path)) {
+    return { type: 'local', path: destination.path, ref };
+  }
+
+  // A resolved owner matches at most one path per root, so this can't be ambiguous.
+  const inSrcDirs = searchSrcDirs(ref, ref.owner, settings, home);
+  if (inSrcDirs.length) {
+    return { type: 'local', path: inSrcDirs[0]!, ref };
+  }
+
+  return { type: 'remote', url: buildCloneUrl(ref), destination: destination.path, ref };
+}
+
+function searchSrcDirs(ref: RepoRef, owner: string | null, settings: LocateSettings, home: string): string[] {
+  return findInSrcDirs({ name: ref.name, owner, srcDirs: settings.additionalSrcDirs,
+    cloneTemplate: settings.cloneTemplate, worktreeTemplate: settings.worktreeTemplate, host: effectiveHost(ref),
+    hostAliases: settings.hostAliases, home });
+}
+
+function oneOrAmbiguous(paths: string[], ref: RepoRef): LocalRepo {
+  if (paths.length > 1) {
+    throw new LocateError({ reason: 'ambiguous-local', ref, paths });
+  }
+  return { type: 'local', path: paths[0]!, ref };
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
