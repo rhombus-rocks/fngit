@@ -1,3 +1,4 @@
+import { isDefined } from '@rhombus-toolkit/type-guards';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -33,13 +34,22 @@ const SYSTEM_HOST_ALIASES_PATH = '/usr/share/fnrhombus/host-aliases.json';
 
 const STRING_FIELDS = ['cloneTemplate', 'worktreeTemplate'] as const satisfies ReadonlyArray<keyof RepoSettings>;
 
+export interface LoadLocateSettingsArgs {
+  home: string;
+  cwd: string;
+  /** Path to the managed-settings tier; defaults to the system location. Injectable so tests stay hermetic. */
+  managedPath?: string;
+  /** Path to the system host-aliases file; defaults to the system location. Injectable so tests stay hermetic. */
+  systemAliasesPath?: string;
+}
+
 /** Read the settings chain rooted at `home` and `cwd`, plus the host-aliases layers. */
-export function loadLocateSettings(args: { home: string; cwd: string; }): LocateSettings {
+export function loadLocateSettings(args: LoadLocateSettingsArgs): LocateSettings {
   const repoSettings = loadRepoSettings({ userPath: join(args.home, '.claude/settings.json'),
     projectPath: join(args.cwd, '.claude/settings.json'), localPath: join(args.cwd, '.claude/settings.local.json'),
-    managedPath: MANAGED_SETTINGS_PATH });
+    managedPath: args.managedPath ?? MANAGED_SETTINGS_PATH });
   return { ...repoSettings,
-    hostAliases: loadHostAliases({ systemPath: SYSTEM_HOST_ALIASES_PATH,
+    hostAliases: loadHostAliases({ systemPath: args.systemAliasesPath ?? SYSTEM_HOST_ALIASES_PATH,
       userPath: join(args.home, '.local/share/fnrhombus/host-aliases.json') }) };
 }
 
@@ -50,10 +60,8 @@ export function loadLocateSettings(args: { home: string; cwd: string; }): Locate
  */
 export function loadRepoSettings(args: LoadRepoSettingsArgs): RepoSettings {
   const merged: RepoSettings = { cloneTemplate: '', worktreeTemplate: '', additionalSrcDirs: [] };
-  for (const path of [args.userPath, args.projectPath, args.localPath, args.managedPath]) {
-    if (path === undefined) {
-      continue;
-    }
+  const tiers = Iterator.from([args.userPath, args.projectPath, args.localPath, args.managedPath]).filter(isDefined);
+  for (const path of tiers) {
     const tier = readRepoSettingsBlock(path);
     for (const field of STRING_FIELDS) {
       const value = tier[field];

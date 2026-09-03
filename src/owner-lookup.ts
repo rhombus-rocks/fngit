@@ -39,13 +39,10 @@ export async function findOwner(args: FindOwnerArgs): Promise<FindOwnerResult> {
     return { ok: false, reason: 'gh-failed' };
   }
 
-  const matches: string[] = [];
-  for (const owner of candidates) {
-    const probe = await args.api(`repos/${owner}/${args.name}`);
-    if (probe.ok) {
-      matches.push(owner);
-    }
-  }
+  const probes = await Promise.all(
+    candidates.map(async (owner) => ({ owner, found: (await args.api(`repos/${owner}/${args.name}`)).ok })),
+  );
+  const matches = Iterator.from(probes).filter((probe) => probe.found).map((probe) => probe.owner).toArray();
 
   if (!matches.length) {
     return { ok: false, reason: 'not-found' };

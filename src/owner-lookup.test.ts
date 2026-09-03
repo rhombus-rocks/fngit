@@ -52,6 +52,31 @@ describe('findOwner — happy path', () => {
     }
     expect(calls).toEqual(['user', '/user/orgs', 'repos/me/x', 'repos/orgA/x', 'repos/orgB/x']);
   });
+
+  test('the candidate probes fire concurrently, not one round-trip at a time', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const probed: string[] = [];
+    const pending = findOwner({ name: 'x', api: async (path: string) => {
+      if (path === 'user') {
+        return { ok: true, body: 'me\n' };
+      }
+      if (path === '/user/orgs') {
+        return { ok: true, body: 'orgA\norgB\n' };
+      }
+      probed.push(path);
+      await gate;
+      return { ok: false, status: 404, error: 'nope' };
+    } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // All three probes are in flight before any resolves; a sequential loop
+    // would have dispatched only the first.
+    expect(probed.sort()).toEqual(['repos/me/x', 'repos/orgA/x', 'repos/orgB/x']);
+    release();
+    await pending;
+  });
 });
 
 describe('findOwner — ambiguity', () => {

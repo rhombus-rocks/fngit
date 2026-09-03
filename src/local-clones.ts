@@ -1,14 +1,18 @@
 import type { Func } from '@rhombus-toolkit/types';
-import { readdirSync } from 'node:fs';
-import { basename, dirname, join, sep } from 'node:path';
 
-import { expandTilde } from './path.js';
+import { expandGlobPath, expandTilde } from './path.js';
 import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker } from './template.js';
 
-// Substituted for {owner} so the owner segment can be located in the
-// fully-expanded path. Chosen never to collide with a real owner name or any
-// literal template text.
-const OWNER_SENTINEL = '￿';
+// Stands in for {owner} while the pattern is built, so the owner segment can be
+// wildcarded for globbing and recaptured from each hit. Chosen never to appear
+// in a real path, template literal or owner name.
+const OWNER_MARK = '￿';
+
+/** An on-disk clone and the owner segment its path carries. */
+export interface LocalClone {
+  path: string;
+  owner: string;
+}
 
 export interface FindLocalClonesArgs {
   name: string;
@@ -18,78 +22,57 @@ export interface FindLocalClonesArgs {
   host: string;
   hostAliases: Readonly<Record<string, string>>;
   home: string;
-  /**
-   * Directory to scan in place of the one the template resolves into. Only the
-   * template's last segment is re-rooted, so a template whose {owner} lives in
-   * an earlier segment matches nothing here.
-   */
-  scanRoot?: string;
-  readdir?: Func<[string], string[]>;
+  /** Expands one tilde-expanded glob pattern to the directories it names. */
+  expandGlob?: Func<[string], string[]>;
 }
 
-export type FindLocalClonesResult = { ok: true; paths: string[]; } | { ok: false; error: string; };
+export type FindLocalClonesResult = { ok: true; clones: LocalClone[]; } | { ok: false; error: string; };
 
 /**
  * Find every on-disk clone of `name` under the clone template, whatever owner
  * it sits beneath, so disk presence can settle a bare name before any remote
- * lookup.
- *
- * The template is expanded with every placeholder resolved except {owner},
- * which the scan wildcards: nesting by host or any other placeholder therefore
- * lands in the same concrete directory a real clone would. Worktree siblings
- * are rejected, since their owner segment carries the marker
- * {@link deriveWorktreeMarker} derives and a clone's never does.
+ * lookup. Each hit carries the owner segment the scan recovered, and worktree
+ * siblings are excluded. Works wherever {owner} sits in the template.
  */
 export function findLocalClones(args: FindLocalClonesArgs): FindLocalClonesResult {
-  const readdir = args.readdir ?? readdirSync;
+  const marked = expandOwnerTemplate(args);
+  if (!marked.ok) {
+    return marked;
+  }
+  const worktreeMarker = deriveWorktreeMarker(args.template, args.worktreeTemplate ?? '');
+  return { ok: true, clones: matchOwnerClones(marked.value, worktreeMarker, args.expandGlob ?? expandGlobPath) };
+}
 
-  const applied = applyTemplate(args.template,
-    cloneTemplateVars(args.name, OWNER_SENTINEL, args.host, args.hostAliases));
+/** The clone template expanded with {owner} marked for wildcarding, or the template error. */
+export function expandOwnerTemplate(
+  args: { name: string; template: string; host: string; hostAliases: Readonly<Record<string, string>>; home: string; },
+): { ok: true; value: string; } | { ok: false; error: string; } {
+  const applied = applyTemplate(args.template, cloneTemplateVars(args.name, OWNER_MARK, args.host, args.hostAliases));
   if (!applied.ok) {
     return applied;
   }
-  const expanded = expandTilde(applied.value, args.home);
-
-  // The owner segment lives within a single directory level, so the scan reads
-  // the parent directory the template resolves into and rebuilds each entry's
-  // full path to match against prefix + <owner> + suffix. A scanRoot swaps that
-  // parent for the caller's, carrying the template's last segment along.
-  const scanDir = args.scanRoot ?? dirname(expanded.replace(OWNER_SENTINEL, ''));
-  const rooted = args.scanRoot === undefined ? expanded : join(args.scanRoot, basename(expanded));
-
-  const sentinelIdx = rooted.indexOf(OWNER_SENTINEL);
-  if (sentinelIdx < 0) {
-    // The template never mentions {owner} (or mentions it above the segment a
-    // scanRoot re-roots), so there is nothing to enumerate by owner.
-    return { ok: true, paths: [] };
-  }
-  const prefix = rooted.slice(0, sentinelIdx);
-  const suffix = rooted.slice(sentinelIdx + OWNER_SENTINEL.length);
-  const worktreeMarker = deriveWorktreeMarker(args.template, args.worktreeTemplate ?? '');
-
-  let entries: string[];
-  try {
-    entries = readdir(scanDir);
-  } catch {
-    return { ok: true, paths: [] };
-  }
-
-  return { ok: true, paths: entries.map((entry) => join(scanDir, entry)).filter((candidate) => {
-    const owner = extractOwnerSegment(candidate, prefix, suffix);
-    if (owner === null || owner === '' || owner.includes('/') || owner.includes(sep)) {
-      return false;
-    }
-    return worktreeMarker === '' || !owner.includes(worktreeMarker);
-  }) };
+  return { ok: true, value: expandTilde(applied.value, args.home) };
 }
 
 /**
- * The owner segment `candidate` carries between the given literals, or null
- * when it doesn't have their shape at all.
+ * Glob `markedPattern` — a fully-expanded clone path with {owner} marked — and
+ * recover the owner segment of each directory it names, dropping worktree
+ * siblings. A pattern that never mentions {owner} names nothing to enumerate.
  */
-function extractOwnerSegment(candidate: string, prefix: string, suffix: string): string | null {
-  if (!candidate.startsWith(prefix) || (suffix !== '' && !candidate.endsWith(suffix))) {
-    return null;
+export function matchOwnerClones(markedPattern: string, worktreeMarker: string,
+  expandGlob: Func<[string], string[]>): LocalClone[]
+{
+  if (!markedPattern.includes(OWNER_MARK)) {
+    return [];
   }
-  return candidate.slice(prefix.length, candidate.length - suffix.length);
+  const segments = markedPattern.split(OWNER_MARK);
+  const globPattern = segments.join('*');
+  const ownerRe = new RegExp(`^${segments.map(escapeRegExp).join('([^/]+)')}$`);
+  return Iterator.from(expandGlob(globPattern)).map((path) => ({ path, owner: ownerRe.exec(path)?.[1] ?? '' })).filter((
+    clone,
+  ) => clone.owner !== '' && (worktreeMarker === '' || !clone.owner.includes(worktreeMarker))).toArray();
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

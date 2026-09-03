@@ -30,6 +30,27 @@ export function isNotFoundNoiseLine(line: string): boolean {
   return NOT_FOUND_SIGNATURES.some((signature) => signature.test(line));
 }
 
+/**
+ * Reassemble a stream of arbitrary chunks into lines: each complete line is
+ * yielded with its trailing newline, and any final unterminated remainder is
+ * yielded last. A line split across a chunk boundary is stitched back together.
+ */
+export function* splitLines(chunks: Iterable<string>): Generator<string> {
+  let pending = '';
+  for (const chunk of chunks) {
+    pending += chunk;
+    let newlineIdx = pending.indexOf('\n');
+    while (newlineIdx >= 0) {
+      yield pending.slice(0, newlineIdx + 1);
+      pending = pending.slice(newlineIdx + 1);
+      newlineIdx = pending.indexOf('\n');
+    }
+  }
+  if (pending) {
+    yield pending;
+  }
+}
+
 // Paths whose response is only useful flattened to one login per line; every
 // other path is an existence probe read through its exit status alone.
 const API_JQ_FILTERS: Readonly<Record<string, string>> = { user: '.login', '/user/orgs': '.[].login' };
@@ -86,29 +107,49 @@ export class GitHubCli implements IGitHubCli {
         }
       };
 
-      child.stderr?.setEncoding('utf8');
-      child.stderr?.on('data', (chunk: string) => {
+      // stderr is pinned to 'pipe' above, so it is never null.
+      const stderr = child.stderr!;
+      stderr.setEncoding('utf8');
+      stderr.on('data', (chunk: string) => {
         captured += chunk;
-        const lines = (pending + chunk).split('\n');
-        pending = lines.pop() ?? '';
+        const lines = [...splitLines([pending, chunk])];
+        // The last piece is a partial line unless it ends in a newline; hold it.
+        pending = lines.length && !lines[lines.length - 1]!.endsWith('\n') ? lines.pop()! : '';
         for (const line of lines) {
-          echoLine(`${line}\n`);
+          echoLine(line);
         }
       });
 
-      child.on('error', (error) => {
-        resolve({ ok: false, error: `failed to spawn gh: ${error.message}`, stderr: captured });
-      });
-
-      child.on('close', (code) => {
-        if (pending) {
-          echoLine(pending);
-        }
-        if (code !== 0) {
-          resolve({ ok: false, error: `gh exited ${code}`, stderr: captured });
+      let settled = false;
+      const settle = (result: GhCloneResult): void => {
+        if (settled) {
           return;
         }
-        resolve({ ok: true });
+        settled = true;
+        resolve(result);
+      };
+
+      // A spawn failure (gh not on PATH, say) never starts the process, so no
+      // 'close' follows and there is no stderr to drain — settle here. A process
+      // that did start settles from 'close', which fires after stderr is drained.
+      child.on('error', (error) => {
+        settle({ ok: false, error: `failed to spawn gh: ${error.message}`, stderr: captured });
+      });
+
+      child.on('close', (code, signal) => {
+        if (pending) {
+          echoLine(pending);
+          pending = '';
+        }
+        if (signal !== null) {
+          settle({ ok: false, error: `gh killed by ${signal}`, stderr: captured });
+          return;
+        }
+        if (code !== 0) {
+          settle({ ok: false, error: `gh exited ${code}`, stderr: captured });
+          return;
+        }
+        settle({ ok: true });
       });
     });
   }

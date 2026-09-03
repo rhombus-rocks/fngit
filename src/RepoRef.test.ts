@@ -105,6 +105,18 @@ describe('parseRepoRef — workspace suffix', () => {
       expect(result.error).toMatch(/empty workspace/);
     }
   });
+
+  test('a leading `+` leaves no name and is an error', () => {
+    const result = parseRepoRef('+ws');
+    expect(result.ok).toBe(false);
+  });
+
+  test('a `+` inside a URL path is part of the name, not a workspace split', () => {
+    const ref = assertOk(parseRepoRef('https://gitlab.com/o+x/name'));
+    expect(ref.owner).toBe('o+x');
+    expect(ref.name).toBe('name');
+    expect(ref.workspace).toBe('');
+  });
 });
 
 describe('parseRepoRef — error cases', () => {
@@ -130,6 +142,31 @@ describe('parseRepoRef — error cases', () => {
 
   test('owner with @ in it', () => {
     expect(parseRepoRef('owner/@something').ok).toBe(false);
+  });
+
+  test('a leading-slash absolute path is unparseable, not owner/name', () => {
+    expect(parseRepoRef('/home/user/repo').ok).toBe(false);
+  });
+
+  test('a ./ relative path is unparseable', () => {
+    const result = parseRepoRef('./local-path');
+    expect(result.ok).toBe(false);
+  });
+
+  test('a ../ relative path is unparseable', () => {
+    expect(parseRepoRef('../sibling/repo').ok).toBe(false);
+  });
+
+  test('a ~-rooted path is unparseable', () => {
+    expect(parseRepoRef('~/src/repo').ok).toBe(false);
+  });
+
+  test('a `.` name segment is unparseable', () => {
+    expect(parseRepoRef('owner/.').ok).toBe(false);
+  });
+
+  test('a `..` name segment is unparseable', () => {
+    expect(parseRepoRef('sub/..').ok).toBe(false);
   });
 });
 

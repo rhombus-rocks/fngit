@@ -45,32 +45,36 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
   if (input === '') {
     return { ok: false, error: 'empty repo reference' };
   }
-  const ref: RepoRef = { host: '', owner: '', name: '', workspace: '', original: input };
-
+  if (input.startsWith('/') || input.startsWith('~') || input.startsWith('./') || input.startsWith('../')) {
+    return { ok: false, error: `path-like reference ${JSON.stringify(input)} is not a repo shorthand` };
+  }
   let body = input;
+  let workspace = '';
   const plusIdx = body.indexOf('+');
-  if (plusIdx >= 0) {
-    ref.workspace = body.slice(plusIdx + 1);
+  if (plusIdx === 0) {
+    return { ok: false, error: `no repo reference before \`+\` in ${JSON.stringify(input)}` };
+  }
+  // A `+workspace` suffix only ever trails the name, so a `+` with a later `/`
+  // sits inside a URL/scp path and stays part of it rather than being split off.
+  if (plusIdx > 0 && body.indexOf('/', plusIdx) < 0) {
+    workspace = body.slice(plusIdx + 1);
     body = body.slice(0, plusIdx);
-    if (ref.workspace === '') {
+    if (workspace === '') {
       return { ok: false, error: `empty workspace after \`+\` in ${JSON.stringify(input)}` };
     }
   }
 
+  const parsed = (parts: { host?: string; owner?: string; name: string; }): ParseRepoRefOk => ({ ok: true,
+    ref: { host: parts.host ?? '', owner: parts.owner ?? '', name: parts.name, workspace, original: input } });
+
   const urlMatch = URL_RE.exec(body);
   if (urlMatch) {
-    ref.host = urlMatch[1]!;
-    ref.owner = urlMatch[2]!;
-    ref.name = urlMatch[3]!;
-    return { ok: true, ref };
+    return parsed({ host: urlMatch[1]!, owner: urlMatch[2]!, name: urlMatch[3]! });
   }
 
   const scpMatch = SCP_RE.exec(body);
   if (scpMatch) {
-    ref.host = scpMatch[1]!;
-    ref.owner = scpMatch[2]!;
-    ref.name = scpMatch[3]!;
-    return { ok: true, ref };
+    return parsed({ host: scpMatch[1]!, owner: scpMatch[2]!, name: scpMatch[3]! });
   }
 
   if (body.startsWith('gh:')) {
@@ -84,10 +88,7 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
     if (/[/@:]/.test(owner) || /[/@:]/.test(name)) {
       return { ok: false, error: `invalid gh: form: ${JSON.stringify(input)}` };
     }
-    ref.host = 'github.com';
-    ref.owner = owner;
-    ref.name = name;
-    return { ok: true, ref };
+    return parsed({ host: 'github.com', owner, name });
   }
 
   const slashIdx = body.indexOf('/');
@@ -97,12 +98,12 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
     }
     const owner = body.slice(0, slashIdx);
     const name = body.slice(slashIdx + 1);
-    if (/[@:]/.test(owner) || /[@:]/.test(name) || owner === '' || name === '') {
+    if (/[@:]/.test(owner) || /[@:]/.test(name) || owner === '' || name === '' || isDotSegment(owner)
+      || isDotSegment(name))
+    {
       return { ok: false, error: `invalid owner/name form: ${JSON.stringify(input)}` };
     }
-    ref.owner = owner;
-    ref.name = name;
-    return { ok: true, ref };
+    return parsed({ owner, name });
   }
 
   const atIdx = body.indexOf('@');
@@ -112,18 +113,20 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
     if (/[@:/]/.test(owner) || /[@:/]/.test(name) || owner === '' || name === '') {
       return { ok: false, error: `invalid name@owner form: ${JSON.stringify(input)}` };
     }
-    ref.name = name;
-    ref.owner = owner;
-    return { ok: true, ref };
+    return parsed({ name, owner });
   }
 
-  // Defense in depth: the branches above should already have claimed anything
-  // carrying these.
+  // A leftover `/`, `@` or `:` means a leading or stray separator no form
+  // claimed (`@owner`, `:name`, `host:tag`); a clean bare name falls through.
   if (/[/@:]/.test(body)) {
     return { ok: false, error: `unparseable repo reference: ${JSON.stringify(input)}` };
   }
-  ref.name = body;
-  return { ok: true, ref };
+  return parsed({ name: body });
+}
+
+/** Whether a segment is the current- or parent-directory marker, which no repo owner or name is. */
+function isDotSegment(segment: string): boolean {
+  return segment === '.' || segment === '..';
 }
 
 /** Whether the reference named an owner, rather than leaving it to a lookup. */
