@@ -65,9 +65,16 @@ template-driven destination fncode uses) before returning, so the function alway
 - Everything else per the owner's user prefs and this repo's `CLAUDE.md` (branch policy, TDD,
   conventional commits, semantic-release flow).
 
+## Publishing
+
+- **npm package name: `@rhombus.rocks/fngit`.** Claimed 2026-09-03 with a `0.0.0-alpha.0`
+  placeholder. The bare name `fngit` was refused by npm as too similar to the existing package
+  `degit`.
+- **The publish workflow is `.github/workflows/release.yml`.** The npm trusted publisher (OIDC) is
+  registered against that filename with environment `production`. `ci.yml` keeps only the
+  `verify` job; the `publish-next` and `promote` jobs move to `release.yml`.
+- `AUTOMERGE_PAT` is set on the repo (GitHub-side, so the auto-merge push triggers `release.yml`).
+
 ## Open questions
 
-- **npm package name.** The template's `claim-npm.ps1` step needs one. `fngit` unscoped vs
-  `@rhombus-rocks/fngit` is unruled. `npm org ls rhombus-rocks` returns 403 with the current npm
-  credentials — either the npm org doesn't exist yet or the token doesn't cover it.
 - **Should fncode itself then consume this library?** Out of scope until the owner says so.
