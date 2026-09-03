@@ -11,12 +11,13 @@ Worktree mechanics, branch/PR cleanup, and templated paths are governed by `~/.c
 This repo uses [semantic-release](https://semantic-release.gitbook.io/) with a two-stage dist-tag promotion:
 
 - Every push to `main` (necessarily via PR merge — see above) runs the
-  `CI` workflow's `publish-next` job. semantic-release reads the
-  conventional-commit history, determines the next version, publishes to
-  npm under the `@next` dist-tag, and creates a GitHub **pre-release**.
-- Promotion to `@latest` is a **manual gate**. Run the `CI` workflow via
-  workflow_dispatch ("Run workflow" in the Actions UI); the `promote` job
-  is gated by the `production` environment, which requires reviewer
+  `Release` workflow's (`release.yml`) `publish-next` job. semantic-release
+  reads the conventional-commit history, determines the next version,
+  publishes to npm under the `@next` dist-tag, and creates a GitHub
+  **pre-release**.
+- Promotion to `@latest` is a **manual gate**. Run the `Release` workflow
+  via workflow_dispatch ("Run workflow" in the Actions UI); the `promote`
+  job is gated by the `production` environment, which requires reviewer
   approval. It moves the same artifact from `@next` to `@latest` on npm
   and converts the GitHub pre-release into the latest release. No
   rebuild — the @next version is the @latest version.

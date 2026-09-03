@@ -1,68 +1,50 @@
-# npm
+# @rhombus.rocks/fngit
 
-A GitHub template for projects that publish to **npm**, with:
+A library for locating git repos from short references, plus `fngit` — a CLI
+that decorates `git` with that lookup.
 
-- **OIDC trusted publishing** — no `NPM_TOKEN` secret; the workflow auths to
-  npm via GitHub Actions' OIDC identity, configured per-package and per-workflow.
-- **npm provenance** — every published version carries a verifiable build
-  attestation linking the artifact to this repo + the exact workflow run.
-- **`@next` → `@latest` promotion** — every PR merge publishes a `@next`
-  pre-release automatically; you promote to `@latest` manually through a
-  reviewer-gated workflow when the version is ready for general consumption.
+The library resolves a user-typed reference (`<name>`, `<name>@<owner>`,
+`<owner>/<name>`, `gh:<owner>/<name>`, a full URL, `+workspace` suffixes and
+all) against your existing local clones and, failing that, your GitHub orgs —
+returning either the local path or the clone URL, optionally cloning it for
+you. `fngit clone <ref>` runs that resolution and clones the repo to its
+configured destination; every other `git` subcommand and argument passes
+straight through unchanged.
 
-## What you get
+## Install
 
-Out of the box:
+```sh
+npm install @rhombus.rocks/fngit
+```
 
-- `semantic-release` reads conventional-commit history on every push to
-  `main`, determines the version, publishes to npm under `@next`, and
-  creates a GitHub pre-release.
-- A manual `promote` workflow that moves the same artifact from `@next`
-  to `@latest` on npm and converts the GitHub pre-release into the
-  latest release. Gated by the `production` environment (required
-  reviewer approval).
-- `auto-merge.yml` enables auto-merge on every non-draft PR so the
-  publish chain closes without human intervention until the promote gate.
-- Conventional-commits → semver bump, with rules documented in `CLAUDE.md`.
+## Development
 
-## Use it
+Toolchain is pinned via [mise](https://mise.jdx.dev/) — running any command
+inside the repo picks up the pinned Node and bun versions automatically.
 
-1. Click **Use this template** on GitHub (or `gh repo create
-   <new-name> --template fntemplate/npm --public`).
-2. Run `claim-npm.ps1` to claim the npm package name with a placeholder
-   `0.0.0` publish (idempotent — re-running on an already-claimed package
-   is safe).
-3. Run `setup-gh.ps1` to merge template files into your repo, configure
-   branch protection + the `production` environment, set repo-level merge
-   settings (squash-only, PR title/body squash, linear history, auto-merge,
-   auto-delete-branch), and register GitHub Actions as a trusted publisher
-   on the npm package.
-4. Add the `AUTOMERGE_PAT` secret manually (Settings → Secrets and
-   variables → Actions → New repository secret). Classic PAT with `repo`
-   + `workflow` scopes. PAT — not `GITHUB_TOKEN` — because GitHub
-   suppresses workflow triggers for `GITHUB_TOKEN`-actored events, which
-   would prevent the post-merge `push` from triggering `publish-next`.
-5. Fill in the `lint`, `test`, and `build` steps in
-   `.github/workflows/ci.yml`'s `verify` job, and the corresponding
-   `npm run` scripts in `package.json`.
-6. Commit a `feat:` change on a branch and open a PR. Auto-merge enables;
-   when `verify` goes green it merges; `publish-next` runs; `@next` ships.
-7. When ready, go to Actions → "CI" → "Run workflow", approve the
-   `production` environment gate, and `@latest` updates.
+```sh
+bun install
+bun run lint          # typecheck + eslint
+bun run test          # bun test
+bun run build         # tsc emit to dist/
+bun run format        # dprint fmt
+bun run format:check  # dprint check
+```
 
-## Workflow files
+A pre-commit hook (`.githooks/pre-commit`, wired up automatically by mise on
+directory entry) runs `dprint check` and `bun run lint` before every commit.
 
-| File | Role |
-|---|---|
-| `ci.yml` | `verify` (lint/test/build), `publish-next` (semantic-release on push to main), `promote` (workflow_dispatch, @next → @latest, gated) |
-| `auto-merge.yml` | Enables auto-merge on every non-draft PR |
+## Release
 
-## See also
+Every PR merge to `main` runs the `Release` workflow's `publish-next` job:
+semantic-release reads the conventional-commit history, determines the next
+version, and publishes it to npm under the `@next` dist-tag with a GitHub
+pre-release.
 
-- `CLAUDE.md` — conventions / discipline (branch policy, TDD, commit
-  conventions, release flow)
-- `claim-npm.ps1` — claim the npm package name (run first, before
-  configuring GitHub)
-- `setup-gh.ps1` — configure GitHub repo settings, branch protection,
-  environment, and npm trusted publisher (run second)
-- `.releaserc.json` — semantic-release config
+Promotion to `@latest` is a manual gate — run the `Release` workflow via
+"Run workflow" in the Actions UI; the `promote` job is gated by the
+`production` environment and requires reviewer approval before it moves the
+same artifact from `@next` to `@latest`.
+
+See `CLAUDE.md` for the full branch policy, TDD requirement, and commit
+conventions this repo follows.
