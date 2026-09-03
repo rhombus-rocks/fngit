@@ -48,7 +48,10 @@ resolves `local`.
 `ref` is the parsed reference — `host`, `owner`, `name`, `workspace`,
 `original`. Its `workspace` is carried through untouched and never affects the
 destination; a `+workspace` suffix names a worktree beside the clone, not a
-different clone.
+different clone. When a bare name is settled by a clone on disk, `owner` is
+filled in from the owner segment the scan recovered — the one exception is a
+bare name matched at `<dir>/<name>` in an extra source root, which carries no
+owner in its path, so `owner` stays empty there.
 
 ### Options
 
@@ -68,11 +71,16 @@ different clone.
    and the `git@host:owner/name` form, each with an optional `+workspace`
    suffix.
 2. Load the settings chain, then apply the `settings` overlay field by field.
+   A broken clone template — empty, an unknown placeholder, or a `{host-short}`
+   with no alias — fails `config` here, before any disk scan or network call.
 3. For a bare name, before any network call:
-   1. scan the clone template's own root with `{owner}` wildcarded, excluding
-      worktree siblings — one hit resolves `local`, several are ambiguous;
-   2. search `additionalSrcDirs`, each entry twice: `<dir>/<name>`, then the
-      clone template's last segment re-rooted there;
+   1. scan the clone template with `{owner}` wildcarded — wherever `{owner}`
+      sits in it, at any depth — excluding worktree siblings, and recover each
+      hit's owner segment onto the result; one hit resolves `local`, several are
+      ambiguous;
+   2. search `additionalSrcDirs`, each entry twice: `<dir>/<name>` (which
+      carries no owner, so the result's `owner` stays empty), then the clone
+      template's last segment re-rooted there;
    3. ask `gh` who owns it — the authenticated user first, then each
       organization in API order. Every candidate is probed, so a name two
       owners share is ambiguous rather than silently resolved.
@@ -148,7 +156,10 @@ same stdout/stderr, same exit code, same behavior for a signal that kills it.
 ### Settings
 
 `loadLocateSettings({ home, cwd })` reads the `repoSettings` block of four
-tiers, later ones winning field by field:
+tiers, later ones winning field by field. It also accepts optional
+`managedPath` and `systemAliasesPath` overrides for the two system-absolute
+locations below, defaulting to them — injectable so a test can point the chain
+at a temp directory instead of the real system files:
 
 1. `<home>/.claude/settings.json`
 2. `<cwd>/.claude/settings.json`
