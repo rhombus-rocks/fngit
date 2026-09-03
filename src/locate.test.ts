@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -51,11 +51,6 @@ function mkdirp(...segments: string[]): string {
   const path = join(...segments);
   mkdirSync(path, { recursive: true });
   return path;
-}
-
-function writeJson(path: string, body: unknown): void {
-  mkdirSync(join(path, '..'), { recursive: true });
-  writeFileSync(path, JSON.stringify(body));
 }
 
 async function expectFailure(promise: Promise<unknown>): Promise<LocateError> {
@@ -334,31 +329,5 @@ describe('locate — failures', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe('LocateError');
     expect(error.failure.reason).toBe('unparseable');
-  });
-});
-
-describe('locate — where settings come from', () => {
-  test('with no overlay, the settings chain on disk is what is used', async () => {
-    writeJson(join(HOME, '.claude/settings.json'), { repoSettings: { cloneTemplate: '~/code/{owner}--{repo}' } });
-    const found = await locate('fnrhombus/arch-setup', { home: HOME, cwd: CWD, gh: fakeGh() });
-    expect(found).toMatchObject({ destination: join(HOME, 'code/fnrhombus--arch-setup') });
-  });
-
-  test('the project tier overrides the user tier', async () => {
-    writeJson(join(HOME, '.claude/settings.json'), { repoSettings: { cloneTemplate: '~/user/{repo}@{owner}' } });
-    writeJson(join(CWD, '.claude/settings.json'), { repoSettings: { cloneTemplate: '~/project/{repo}@{owner}' } });
-    const found = await locate('fnrhombus/arch-setup', { home: HOME, cwd: CWD, gh: fakeGh() });
-    expect(found).toMatchObject({ destination: join(HOME, 'project/arch-setup@fnrhombus') });
-  });
-
-  test('an overlay replaces only the fields it names', async () => {
-    writeJson(join(HOME, '.claude/settings.json'), {
-      repoSettings: { cloneTemplate: '~/user/{repo}@{owner}', additionalSrcDirs: ['~/.local/src'] },
-    });
-    const checkout = mkdirp(HOME, '.local/src/runtime@dotnet');
-    const found = await locate('dotnet/runtime', { home: HOME, cwd: CWD, gh: fakeGh(),
-      settings: { cloneTemplate: '~/overridden/{repo}@{owner}' } });
-    // additionalSrcDirs survived the overlay, so the checkout still wins over a clone.
-    expect(found).toMatchObject({ type: 'local', path: checkout });
   });
 });

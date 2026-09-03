@@ -226,6 +226,15 @@ describe('loadHostAliases', () => {
 });
 
 describe('loadLocateSettings — the wired-up chain', () => {
+  // The managed tier and system host-aliases live at absolute system paths; the
+  // tests point them at tmpdir so the chain never reads the developer's real
+  // /etc/claude-code/managed-settings.json or /usr/share host-aliases file.
+  let hermetic: { managedPath: string; systemAliasesPath: string; };
+
+  beforeEach(() => {
+    hermetic = { managedPath: join(tmpRoot, 'no-managed.json'), systemAliasesPath: join(tmpRoot, 'no-system.json') };
+  });
+
   test('reads repoSettings from the user tier and aliases from the user data dir', () => {
     const home = join(tmpRoot, 'home');
     const cwd = join(tmpRoot, 'project');
@@ -234,13 +243,11 @@ describe('loadLocateSettings — the wired-up chain', () => {
       repoSettings: { cloneTemplate: '~/src/{repo}@{owner}', additionalSrcDirs: '~/.local/src' },
     });
     write(join(home, '.local/share/fnrhombus/host-aliases.json'), { 'github.com': 'gh' });
-    const settings = loadLocateSettings({ home, cwd });
+    const settings = loadLocateSettings({ home, cwd, ...hermetic });
     expect(settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
     expect(settings.worktreeTemplate).toBe('');
     expect(settings.additionalSrcDirs).toEqual(['~/.local/src']);
-    // Only the user layer is assertable: the system layer is a real path this
-    // machine may or may not carry.
-    expect(settings.hostAliases['github.com']).toBe('gh');
+    expect(settings.hostAliases).toEqual({ 'github.com': 'gh' });
   });
 
   test('the project tier overrides the user tier, and local overrides project', () => {
@@ -248,9 +255,27 @@ describe('loadLocateSettings — the wired-up chain', () => {
     const cwd = join(tmpRoot, 'project');
     write(join(home, '.claude/settings.json'), { repoSettings: { cloneTemplate: 'user-tpl' } });
     write(join(cwd, '.claude/settings.json'), { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadLocateSettings({ home, cwd }).cloneTemplate).toBe('project-tpl');
+    expect(loadLocateSettings({ home, cwd, ...hermetic }).cloneTemplate).toBe('project-tpl');
     write(join(cwd, '.claude/settings.local.json'), { repoSettings: { cloneTemplate: 'local-tpl' } });
-    expect(loadLocateSettings({ home, cwd }).cloneTemplate).toBe('local-tpl');
+    expect(loadLocateSettings({ home, cwd, ...hermetic }).cloneTemplate).toBe('local-tpl');
+  });
+
+  test('the injected managed tier outranks the local tier', () => {
+    const home = join(tmpRoot, 'home');
+    const cwd = join(tmpRoot, 'project');
+    write(join(cwd, '.claude/settings.local.json'), { repoSettings: { cloneTemplate: 'local-tpl' } });
+    write(hermetic.managedPath, { repoSettings: { cloneTemplate: 'managed-tpl' } });
+    expect(loadLocateSettings({ home, cwd, ...hermetic }).cloneTemplate).toBe('managed-tpl');
+  });
+
+  test('the injected system host-aliases file is read, the user file winning on conflict', () => {
+    const home = join(tmpRoot, 'home');
+    const cwd = join(tmpRoot, 'project');
+    mkdirSync(cwd, { recursive: true });
+    write(hermetic.systemAliasesPath, { 'github.com': 'gh-sys', 'gitlab.com': 'gl' });
+    write(join(home, '.local/share/fnrhombus/host-aliases.json'), { 'github.com': 'gh-user' });
+    expect(loadLocateSettings({ home, cwd, ...hermetic }).hostAliases).toEqual({ 'github.com': 'gh-user',
+      'gitlab.com': 'gl' });
   });
 
   test('nothing configured anywhere → empty settings rather than a throw', () => {
@@ -258,9 +283,10 @@ describe('loadLocateSettings — the wired-up chain', () => {
     const cwd = join(tmpRoot, 'bare-project');
     mkdirSync(home);
     mkdirSync(cwd);
-    const settings = loadLocateSettings({ home, cwd });
+    const settings = loadLocateSettings({ home, cwd, ...hermetic });
     expect(settings.cloneTemplate).toBe('');
     expect(settings.worktreeTemplate).toBe('');
     expect(settings.additionalSrcDirs).toEqual([]);
+    expect(settings.hostAliases).toEqual({});
   });
 });
