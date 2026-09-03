@@ -100,6 +100,51 @@ a caller can branch on the reason rather than parse the message.
 | `ambiguous-local` | Several checkouts on disk match; `paths` lists them.                                                                  |
 | `clone-failed`    | The clone itself failed; `repoNotFound` says whether the repo simply doesn't exist.                                   |
 
+## CLI
+
+```sh
+npm install -g @rhombus.rocks/fngit
+```
+
+`fngit` decorates `git clone`: only `clone` is intercepted, and only when its
+first argument is a bare reference — every other subcommand and argument
+passes straight through to `git` unchanged.
+
+```sh
+fngit clone fnclaude          # locate() resolves the ref, cloning if needed
+fngit clone fnclaude --depth 1  # extra args forward to the underlying clone
+```
+
+### Dispatch rule
+
+`fngit clone <arg> …` is decorated only when `<arg>`:
+
+- doesn't start with `-` (so a leading flag, e.g. `fngit clone --depth 1 x`,
+  passes through — git owns its own flag parsing);
+- isn't a filesystem path (doesn't start with `.` or `/`, e.g.
+  `fngit clone ./local-path`);
+- parses as one of the [reference forms](#locate) above; and
+- has no second positional after it (`fngit clone <ref> <dir>` passes
+  through — the user chose git's destination explicitly).
+
+Anything else — `fngit clone` alone, two positionals, an unparseable or
+path-like first argument — passes straight through to `git clone`. A
+reference carrying a `+workspace` suffix is rejected (exit `2`); worktree
+support isn't implemented yet.
+
+### Exit codes
+
+| Code    | Meaning                                                                                                                                      |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`     | The clone resolved (or already existed); its path was printed to stdout.                                                                     |
+| `1`     | `locate()` rejected with a [`LocateError`](#locateerror); its message (and, for an ambiguous result, one candidate per line) went to stderr. |
+| `2`     | The reference carried a `+workspace` suffix, which `fngit clone` doesn't support yet.                                                        |
+| `127`   | `git` itself isn't on `PATH`.                                                                                                                |
+| _other_ | A passed-through `git` invocation's own exit status.                                                                                         |
+
+Everything that isn't a decorated `clone` is `git`, verbatim — same flags,
+same stdout/stderr, same exit code, same behavior for a signal that kills it.
+
 ### Settings
 
 `loadLocateSettings({ home, cwd })` reads the `repoSettings` block of four
