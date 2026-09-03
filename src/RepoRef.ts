@@ -45,6 +45,9 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
   if (input === '') {
     return { ok: false, error: 'empty repo reference' };
   }
+  if (input.startsWith('/') || input.startsWith('~') || input.startsWith('./') || input.startsWith('../')) {
+    return { ok: false, error: `path-like reference ${JSON.stringify(input)} is not a repo shorthand` };
+  }
   const ref: RepoRef = { host: '', owner: '', name: '', workspace: '', original: input };
 
   let body = input;
@@ -97,7 +100,9 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
     }
     const owner = body.slice(0, slashIdx);
     const name = body.slice(slashIdx + 1);
-    if (/[@:]/.test(owner) || /[@:]/.test(name) || owner === '' || name === '') {
+    if (/[@:]/.test(owner) || /[@:]/.test(name) || owner === '' || name === '' || isDotSegment(owner)
+      || isDotSegment(name))
+    {
       return { ok: false, error: `invalid owner/name form: ${JSON.stringify(input)}` };
     }
     ref.owner = owner;
@@ -124,6 +129,11 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
   }
   ref.name = body;
   return { ok: true, ref };
+}
+
+/** Whether a segment is the current- or parent-directory marker, which no repo owner or name is. */
+function isDotSegment(segment: string): boolean {
+  return segment === '.' || segment === '..';
 }
 
 /** Whether the reference named an owner, rather than leaving it to a lookup. */

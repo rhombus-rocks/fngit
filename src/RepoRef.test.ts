@@ -131,6 +131,31 @@ describe('parseRepoRef — error cases', () => {
   test('owner with @ in it', () => {
     expect(parseRepoRef('owner/@something').ok).toBe(false);
   });
+
+  test('a leading-slash absolute path is unparseable, not owner/name', () => {
+    expect(parseRepoRef('/home/user/repo').ok).toBe(false);
+  });
+
+  test('a ./ relative path is unparseable', () => {
+    const result = parseRepoRef('./local-path');
+    expect(result.ok).toBe(false);
+  });
+
+  test('a ../ relative path is unparseable', () => {
+    expect(parseRepoRef('../sibling/repo').ok).toBe(false);
+  });
+
+  test('a ~-rooted path is unparseable', () => {
+    expect(parseRepoRef('~/src/repo').ok).toBe(false);
+  });
+
+  test('a `.` name segment is unparseable', () => {
+    expect(parseRepoRef('owner/.').ok).toBe(false);
+  });
+
+  test('a `..` name segment is unparseable', () => {
+    expect(parseRepoRef('sub/..').ok).toBe(false);
+  });
 });
 
 describe('hasResolvedOwner', () => {
