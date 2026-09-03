@@ -6,7 +6,7 @@ import { parseRepoRef } from './RepoRef.js';
 export type CliPlan = { kind: 'passthrough'; args: readonly string[]; } | { kind: 'clone'; input: string;
   cloneArgs: readonly string[]; } | { kind: 'reject-workspace'; input: string; };
 
-const PATH_LIKE_PREFIXES = ['.', '/'];
+const PATH_LIKE_PREFIXES = ['.', '/', '~'];
 
 /**
  * Decide whether a `git` invocation is a decoratable `clone <ref>` — a bare
