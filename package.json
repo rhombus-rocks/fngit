@@ -40,5 +40,13 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhombus-rocks/fngit.git"
+  },
+  "homepage": "https://github.com/rhombus-rocks/fngit#readme",
+  "bugs": {
+    "url": "https://github.com/rhombus-rocks/fngit/issues"
   }
 }
