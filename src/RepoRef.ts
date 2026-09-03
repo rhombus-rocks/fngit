@@ -52,7 +52,12 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
 
   let body = input;
   const plusIdx = body.indexOf('+');
-  if (plusIdx >= 0) {
+  if (plusIdx === 0) {
+    return { ok: false, error: `no repo reference before \`+\` in ${JSON.stringify(input)}` };
+  }
+  // A `+workspace` suffix only ever trails the name, so a `+` with a later `/`
+  // sits inside a URL/scp path and stays part of it rather than being split off.
+  if (plusIdx > 0 && body.indexOf('/', plusIdx) < 0) {
     ref.workspace = body.slice(plusIdx + 1);
     body = body.slice(0, plusIdx);
     if (ref.workspace === '') {

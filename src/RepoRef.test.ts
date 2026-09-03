@@ -105,6 +105,18 @@ describe('parseRepoRef — workspace suffix', () => {
       expect(result.error).toMatch(/empty workspace/);
     }
   });
+
+  test('a leading `+` leaves no name and is an error', () => {
+    const result = parseRepoRef('+ws');
+    expect(result.ok).toBe(false);
+  });
+
+  test('a `+` inside a URL path is part of the name, not a workspace split', () => {
+    const ref = assertOk(parseRepoRef('https://gitlab.com/o+x/name'));
+    expect(ref.owner).toBe('o+x');
+    expect(ref.name).toBe('name');
+    expect(ref.workspace).toBe('');
+  });
 });
 
 describe('parseRepoRef — error cases', () => {
