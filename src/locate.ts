@@ -10,6 +10,7 @@ import { findOwner } from './owner-lookup.js';
 import { effectiveHost, hasResolvedOwner, parseRepoRef, type RepoRef } from './RepoRef.js';
 import { loadLocateSettings, type LocateSettings } from './settings.js';
 import { findInSrcDirs } from './src-dirs.js';
+import { applyTemplate, cloneTemplateVars } from './template.js';
 
 /** A repository that already exists on disk. */
 export type LocalRepo = { type: 'local'; path: string; ref: RepoRef; };
@@ -52,6 +53,7 @@ export async function locate(input: string, options: LocateOptions = {}): Promis
 
   const home = options.home ?? homedir();
   const settings = overlaySettings(loadLocateSettings({ home, cwd: options.cwd ?? process.cwd() }), options.settings);
+  validateCloneTemplate(settings, parsed.ref);
   const gh = options.gh ?? new GitHubCli();
 
   const located = hasResolvedOwner(parsed.ref)
@@ -71,6 +73,24 @@ export async function locate(input: string, options: LocateOptions = {}): Promis
   return { type: 'local', path: located.destination, ref: located.ref };
 }
 
+/**
+ * Reject a broken clone template up front — an empty template, an unknown
+ * placeholder, or a `{host-short}` with no alias — so a bare name fails `config`
+ * before any disk scan or gh call rather than surfacing as a misleading miss.
+ */
+function validateCloneTemplate(settings: LocateSettings, ref: RepoRef): void {
+  if (settings.cloneTemplate === '') {
+    throw new LocateError({ reason: 'config',
+      message: 'cloneTemplate is not configured in repoSettings; cannot resolve repo references. '
+        + 'Set repoSettings.cloneTemplate in ~/.claude/settings.json (e.g. "~/src/{repo}@{owner}")' });
+  }
+  const probe = applyTemplate(settings.cloneTemplate,
+    cloneTemplateVars(ref.name, ref.owner || 'owner', effectiveHost(ref), settings.hostAliases));
+  if (!probe.ok) {
+    throw new LocateError({ reason: 'config', message: probe.error });
+  }
+}
+
 function overlaySettings(base: LocateSettings, overlay: Partial<LocateSettings> = {}): LocateSettings {
   return { cloneTemplate: overlay.cloneTemplate ?? base.cloneTemplate,
     worktreeTemplate: overlay.worktreeTemplate ?? base.worktreeTemplate,
@@ -85,7 +105,10 @@ function overlaySettings(base: LocateSettings, overlay: Partial<LocateSettings> 
 async function locateBareName(ref: RepoRef, settings: LocateSettings, home: string, gh: IGitHubCli): Promise<Located> {
   const clones = findLocalClones({ name: ref.name, template: settings.cloneTemplate,
     worktreeTemplate: settings.worktreeTemplate, host: effectiveHost(ref), hostAliases: settings.hostAliases, home });
-  if (clones.ok && clones.clones.length) {
+  if (!clones.ok) {
+    throw new LocateError({ reason: 'config', message: clones.error });
+  }
+  if (clones.clones.length) {
     return resolveDiskHit(clones.clones, ref);
   }
 
@@ -122,11 +145,6 @@ async function locateBareName(ref: RepoRef, settings: LocateSettings, home: stri
  * it.
  */
 function locateWithOwner(ref: RepoRef, settings: LocateSettings, home: string): Located {
-  if (settings.cloneTemplate === '') {
-    throw new LocateError({ reason: 'config',
-      message: 'cloneTemplate is not configured in repoSettings; cannot resolve repo references. '
-        + 'Set repoSettings.cloneTemplate in ~/.claude/settings.json (e.g. "~/src/{repo}@{owner}")' });
-  }
   const destination = computeCloneDestination({ ref, template: settings.cloneTemplate,
     hostAliases: settings.hostAliases, home });
   if (!destination.ok) {

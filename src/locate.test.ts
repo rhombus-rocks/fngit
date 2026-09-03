@@ -275,6 +275,23 @@ describe('locate — failures', () => {
     expect(error.message).toContain('{bogus}');
   });
 
+  test('a bare name with a broken cloneTemplate fails config before any gh call', async () => {
+    const gh = fakeGh();
+    const error = await expectFailure(
+      locate('arch-setup', options({ gh, settings: { cloneTemplate: '~/src/{bogus}' } })),
+    );
+    expect(error.failure.reason).toBe('config');
+    expect(error.message).toContain('{bogus}');
+    expect(gh.log.api).toEqual([]);
+  });
+
+  test('an empty cloneTemplate is config for a bare name too, before any gh call', async () => {
+    const gh = fakeGh();
+    const error = await expectFailure(locate('arch-setup', options({ gh, settings: { cloneTemplate: '' } })));
+    expect(error.failure.reason).toBe('config');
+    expect(gh.log.api).toEqual([]);
+  });
+
   test('the gh lookup failing outright', async () => {
     const gh = fakeGh({ user: { ok: false, status: 401, error: 'not logged in' } });
     const error = await expectFailure(locate('arch-setup', options({ gh })));
