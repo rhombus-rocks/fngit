@@ -29,6 +29,7 @@ export interface LocateOptions {
   cwd?: string;
   /** Root for `~` expansion and the user settings tier; defaults to the current user's home. */
   home?: string;
+  /** An `IGitHubCli` to call in place of the real `gh` spawner; inject a fake in tests. */
   gh?: IGitHubCli;
   /** Extra arguments for `git clone`, honoured only alongside `clone`. */
   cloneArgs?: readonly string[];
@@ -119,7 +120,9 @@ async function locateBareName(ref: RepoRef, settings: LocateSettings, home: stri
 
   const owner = await findOwner({ name: ref.name, api: (path) => gh.api(path) });
   if (owner.ok) {
-    return locateWithOwner({ ...ref, owner: owner.owner }, settings, home);
+    // The owner-null pass above already searched additionalSrcDirs — a superset
+    // of what this owner could match — so skip that search the second time.
+    return locateWithOwner({ ...ref, owner: owner.owner }, settings, home, false);
   }
   switch (owner.reason) {
     case 'gh-failed': {
@@ -144,7 +147,7 @@ async function locateBareName(ref: RepoRef, settings: LocateSettings, home: stri
  * extra source root if one holds it, and otherwise the clone that would create
  * it.
  */
-function locateWithOwner(ref: RepoRef, settings: LocateSettings, home: string): Located {
+function locateWithOwner(ref: RepoRef, settings: LocateSettings, home: string, searchExtraDirs = true): Located {
   const destination = computeCloneDestination({ ref, template: settings.cloneTemplate,
     hostAliases: settings.hostAliases, home });
   if (!destination.ok) {
@@ -154,10 +157,12 @@ function locateWithOwner(ref: RepoRef, settings: LocateSettings, home: string): 
     return { type: 'local', path: destination.path, ref };
   }
 
-  // A resolved owner matches at most one path per root, so this can't be ambiguous.
-  const inSrcDirs = searchSrcDirs(ref, ref.owner, settings, home);
-  if (inSrcDirs.length) {
-    return { type: 'local', path: inSrcDirs[0]!, ref };
+  if (searchExtraDirs) {
+    // A resolved owner matches at most one path per root, so this can't be ambiguous.
+    const inSrcDirs = searchSrcDirs(ref, ref.owner, settings, home);
+    if (inSrcDirs.length) {
+      return { type: 'local', path: inSrcDirs[0]!, ref };
+    }
   }
 
   return { type: 'remote', url: buildCloneUrl(ref), destination: destination.path, ref };
