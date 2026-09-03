@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 
 import { buildCloneUrl, cloneRepo, computeCloneDestination, isRepoNotFoundError } from './clone.js';
 import { GitHubCli, type IGitHubCli } from './IGitHubCli.js';
-import { findLocalClones } from './local-clones.js';
+import { findLocalClones, type LocalClone } from './local-clones.js';
 import { LocateError } from './LocateError.js';
 import { findOwner } from './owner-lookup.js';
 import { effectiveHost, hasResolvedOwner, parseRepoRef, type RepoRef } from './RepoRef.js';
@@ -85,13 +85,13 @@ function overlaySettings(base: LocateSettings, overlay: Partial<LocateSettings> 
 async function locateBareName(ref: RepoRef, settings: LocateSettings, home: string, gh: IGitHubCli): Promise<Located> {
   const clones = findLocalClones({ name: ref.name, template: settings.cloneTemplate,
     worktreeTemplate: settings.worktreeTemplate, host: effectiveHost(ref), hostAliases: settings.hostAliases, home });
-  if (clones.ok && clones.paths.length) {
-    return oneOrAmbiguous(clones.paths, ref);
+  if (clones.ok && clones.clones.length) {
+    return resolveDiskHit(clones.clones, ref);
   }
 
   const inSrcDirs = searchSrcDirs(ref, null, settings, home);
   if (inSrcDirs.length) {
-    return oneOrAmbiguous(inSrcDirs, ref);
+    return resolveDiskHit(inSrcDirs.map((path) => ({ path, owner: ref.owner })), ref);
   }
 
   const owner = await findOwner({ name: ref.name, api: (path) => gh.api(path) });
@@ -151,11 +151,13 @@ function searchSrcDirs(ref: RepoRef, owner: string | null, settings: LocateSetti
     hostAliases: settings.hostAliases, home });
 }
 
-function oneOrAmbiguous(paths: string[], ref: RepoRef): LocalRepo {
-  if (paths.length > 1) {
-    throw new LocateError({ reason: 'ambiguous-local', ref, paths });
+/** Settle a set of disk hits: the single checkout, filling in the owner the scan recovered, or ambiguous. */
+function resolveDiskHit(clones: readonly LocalClone[], ref: RepoRef): LocalRepo {
+  if (clones.length > 1) {
+    throw new LocateError({ reason: 'ambiguous-local', ref, paths: clones.map((clone) => clone.path) });
   }
-  return { type: 'local', path: paths[0]!, ref };
+  const hit = clones[0]!;
+  return { type: 'local', path: hit.path, ref: { ...ref, owner: hit.owner || ref.owner } };
 }
 
 function isDirectory(path: string): boolean {

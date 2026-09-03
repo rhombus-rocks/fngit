@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { findLocalClones, type FindLocalClonesArgs, type FindLocalClonesResult } from './local-clones.js';
+import { findLocalClones, type FindLocalClonesArgs, type FindLocalClonesResult,
+  type LocalClone } from './local-clones.js';
 
 let tmpRoot: string;
 let HOME: string;
@@ -23,12 +24,16 @@ function args(overrides: Partial<FindLocalClonesArgs> = {}): FindLocalClonesArgs
     host: 'github.com', hostAliases: { 'github.com': 'gh' }, home: HOME, ...overrides };
 }
 
-function assertPaths(result: FindLocalClonesResult): string[] {
+function assertClones(result: FindLocalClonesResult): LocalClone[] {
   expect(result.ok).toBe(true);
   if (!result.ok) {
     throw new Error('test bug: expected ok');
   }
-  return [...result.paths].sort();
+  return [...result.clones].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function assertPaths(result: FindLocalClonesResult): string[] {
+  return assertClones(result).map((clone) => clone.path);
 }
 
 function mkdirp(...segments: string[]): string {
@@ -43,16 +48,21 @@ describe('findLocalClones — the owner wildcard', () => {
     expect(assertPaths(findLocalClones(args()))).toEqual([clone]);
   });
 
-  test('two owners → both paths, for the caller to call ambiguous', () => {
+  test('each hit carries the owner segment the scan recovered', () => {
     mkdirp(HOME, 'src/fnclaude@fnclaude');
     mkdirp(HOME, 'src/fnclaude@fnrhombus');
-    expect(assertPaths(findLocalClones(args()))).toEqual(
-      [join(HOME, 'src/fnclaude@fnclaude'), join(HOME, 'src/fnclaude@fnrhombus')].sort(),
-    );
+    expect(assertClones(findLocalClones(args()))).toEqual([{ path: join(HOME, 'src/fnclaude@fnclaude'),
+      owner: 'fnclaude' }, { path: join(HOME, 'src/fnclaude@fnrhombus'), owner: 'fnrhombus' }]);
   });
 
   test('a different repo name in the same directory is not a match', () => {
     mkdirp(HOME, 'src/other@fnclaude');
+    expect(assertPaths(findLocalClones(args()))).toEqual([]);
+  });
+
+  test('a plain file with the clone shape is not a match', () => {
+    mkdirp(HOME, 'src');
+    writeFileSync(join(HOME, 'src/fnclaude@fnclaude'), 'x');
     expect(assertPaths(findLocalClones(args()))).toEqual([]);
   });
 
@@ -66,9 +76,9 @@ describe('findLocalClones — the owner wildcard', () => {
     expect(found).toEqual([clone]);
   });
 
-  test('a template whose {owner} is above the last segment has nothing to enumerate', () => {
-    mkdirp(HOME, 'src/fnclaude/fnclaude');
-    expect(assertPaths(findLocalClones(args({ template: '~/src/{owner}/{repo}' })))).toEqual([]);
+  test('a template whose {owner} sits above the last segment still resolves', () => {
+    const clone = mkdirp(HOME, 'src/fnclaude/fnclaude');
+    expect(assertPaths(findLocalClones(args({ template: '~/src/{owner}/{repo}' })))).toEqual([clone]);
   });
 });
 
@@ -120,29 +130,14 @@ describe('findLocalClones — degenerate templates', () => {
   });
 });
 
-describe('findLocalClones — injectable seams', () => {
-  test('readdir replaces the real directory listing', () => {
-    const found = assertPaths(
-      findLocalClones(args({ readdir: (dir) => (dir === join(HOME, 'src') ? ['fnclaude@dotnet', 'unrelated'] : []) })),
-    );
-    expect(found).toEqual([join(HOME, 'src/fnclaude@dotnet')]);
-  });
-
-  test('scanRoot re-roots the template last segment into another directory', () => {
-    const found = assertPaths(
-      findLocalClones(
-        args({ scanRoot: '/virtual/extra', readdir: (dir) => (dir === '/virtual/extra' ? ['fnclaude@dotnet'] : []) }),
-      ),
-    );
-    expect(found).toEqual(['/virtual/extra/fnclaude@dotnet']);
-  });
-
-  test('a scanRoot with the owner above the last segment has nothing to enumerate', () => {
-    const found = assertPaths(
-      findLocalClones(
-        args({ template: '~/src/{owner}/{repo}', scanRoot: '/virtual/extra', readdir: () => ['fnclaude'] }),
-      ),
-    );
-    expect(found).toEqual([]);
+describe('findLocalClones — the injectable glob seam', () => {
+  test('expandGlob replaces the real filesystem glob', () => {
+    const seen: string[] = [];
+    const found = findLocalClones(args({ expandGlob: (pattern) => {
+      seen.push(pattern);
+      return [join(HOME, 'src/fnclaude@dotnet')];
+    } }));
+    expect(seen).toEqual([join(HOME, 'src/fnclaude@*')]);
+    expect(assertClones(found)).toEqual([{ path: join(HOME, 'src/fnclaude@dotnet'), owner: 'dotnet' }]);
   });
 });

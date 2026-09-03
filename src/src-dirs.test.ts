@@ -133,30 +133,29 @@ describe('findInSrcDirs — glob entries', () => {
     expect(findInSrcDirs(args({ srcDirs: ['~/cache/*', '~/extra'] }))).toEqual([dir]);
   });
 
-  test('expandGlob is an injectable seam', () => {
+  test('expandGlob feeds both the entry expansion and the clone-shape rung', () => {
     const seen: string[] = [];
-    const dir = mkdirp(HOME, 'extra/runtime@dotnet');
     const found = findInSrcDirs(args({ srcDirs: ['~/cache/*'], expandGlob: (pattern) => {
       seen.push(pattern);
-      return [join(HOME, 'extra')];
+      if (pattern === join(HOME, 'cache/*')) {
+        return [join(HOME, 'extra')];
+      }
+      if (pattern === join(HOME, 'extra/runtime@*')) {
+        return [join(HOME, 'extra/runtime@dotnet')];
+      }
+      return [];
     } }));
-    expect(seen).toEqual([join(HOME, 'cache/*')]);
-    expect(found).toEqual([dir]);
+    expect(seen).toEqual([join(HOME, 'cache/*'), join(HOME, 'extra/runtime@*')]);
+    expect(found).toEqual([join(HOME, 'extra/runtime@dotnet')]);
   });
 
-  test('a literal entry never reaches expandGlob', () => {
-    mkdirp(HOME, 'extra/runtime@dotnet');
-    findInSrcDirs(args({ expandGlob: () => {
-      throw new Error('literal entry must not be globbed');
+  test('a literal src-dir entry is searched directly, only the clone-shape pattern is globbed', () => {
+    const globbed: string[] = [];
+    findInSrcDirs(args({ srcDirs: ['~/extra'], expandGlob: (pattern) => {
+      globbed.push(pattern);
+      return [];
     } }));
-  });
-
-  test('readdir is an injectable seam for the pattern rung', () => {
-    const found = findInSrcDirs(
-      args({ srcDirs: ['/virtual/src'], isDirectory: (path) => path === '/virtual/src/runtime@dotnet',
-        readdir: (dir) => (dir === '/virtual/src' ? ['runtime@dotnet', 'unrelated'] : []) }),
-    );
-    expect(found).toEqual(['/virtual/src/runtime@dotnet']);
+    expect(globbed).toEqual([join(HOME, 'extra/runtime@*')]);
   });
 });
 

@@ -89,9 +89,9 @@ describe('locate — a bare name settled on disk', () => {
     expect(found).toMatchObject({ type: 'local', path: clone });
   });
 
-  test('an owner left unresolved by a disk hit stays empty on the ref', async () => {
+  test('a disk hit fills in the owner segment the scan recovered', async () => {
     mkdirp(HOME, 'src/fnclaude@fnclaude');
-    expect((await locate('fnclaude', options())).ref.owner).toBe('');
+    expect((await locate('fnclaude', options())).ref.owner).toBe('fnclaude');
   });
 
   test('found only in an extra source root → local there, still no gh call', async () => {
