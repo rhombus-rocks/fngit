@@ -49,6 +49,10 @@ describe('planInvocation', () => {
     expect(planInvocation(['clone', '/abs/path'])).toEqual({ kind: 'passthrough', args: ['clone', '/abs/path'] });
   });
 
+  test('clone of a home-relative filesystem path — passthrough', () => {
+    expect(planInvocation(['clone', '~/local-path'])).toEqual({ kind: 'passthrough', args: ['clone', '~/local-path'] });
+  });
+
   test('clone of a ref that fails to parse — passthrough', () => {
     expect(planInvocation(['clone', 'a/b/c'])).toEqual({ kind: 'passthrough', args: ['clone', 'a/b/c'] });
   });
