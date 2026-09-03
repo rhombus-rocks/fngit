@@ -1,0 +1,6 @@
+#!/bin/sh
+# Format + lint check before commit. Runs via `mise exec` so mise-managed
+# bun resolves even in a shell that hasn't run `mise activate`.
+set -e
+mise exec -- bun run format:check
+mise exec -- bun run lint

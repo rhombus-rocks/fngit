@@ -1,11 +1,38 @@
 {
-  "name": "__PACKAGE_NAME__",
+  "name": "@rhombus.rocks/fngit",
   "version": "0.0.0",
-  "description": "__DESCRIPTION__",
+  "description": "Locate git repos from short references and clone them the configured way — a library plus a decorator over the git CLI.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "echo 'TODO: add build command' && exit 1",
-    "test": "echo 'TODO: add test command' && exit 1",
-    "lint": "echo 'TODO: add lint command' && exit 1"
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test --pass-with-no-tests",
+    "lint": "tsc --noEmit -p tsconfig.json && eslint .",
+    "format": "dprint fmt",
+    "format:check": "dprint check"
+  },
+  "dependencies": {
+    "@rhombus-toolkit/type-guards": "^3.1.0",
+    "@rhombus-toolkit/types": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "@types/node": "^26.4.1",
+    "dprint": "^0.57.1",
+    "eslint": "^10.9.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0"
   },
   "publishConfig": {
     "access": "public",
