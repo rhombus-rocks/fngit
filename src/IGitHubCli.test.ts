@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildApiArgv, buildCloneArgv, isNotFoundNoiseLine } from './IGitHubCli.js';
+import { buildApiArgv, buildCloneArgv, isNotFoundNoiseLine, splitLines } from './IGitHubCli.js';
 
 describe('buildApiArgv', () => {
   test('the owner-login path carries the jq filter that flattens it to a line', () => {
@@ -52,5 +52,23 @@ describe('isNotFoundNoiseLine', () => {
   test('false for auth and network failures, which the user must still see', () => {
     expect(isNotFoundNoiseLine('gh: To get started, please run: gh auth login')).toBe(false);
     expect(isNotFoundNoiseLine('dial tcp: lookup api.github.com: no such host')).toBe(false);
+  });
+});
+
+describe('splitLines', () => {
+  test('stitches a line split mid-line across chunk boundaries', () => {
+    expect([...splitLines(['par', 'tial\nline two\nlas', 't'])]).toEqual(['partial\n', 'line two\n', 'last']);
+  });
+
+  test('a chunk boundary landing exactly on a newline', () => {
+    expect([...splitLines(['a\n', 'b\n'])]).toEqual(['a\n', 'b\n']);
+  });
+
+  test('an unterminated final line is yielded as the trailing partial', () => {
+    expect([...splitLines(['only'])]).toEqual(['only']);
+  });
+
+  test('empty input yields nothing', () => {
+    expect([...splitLines([])]).toEqual([]);
   });
 });
