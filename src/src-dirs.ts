@@ -2,7 +2,7 @@ import type { Func } from '@rhombus-toolkit/types';
 import { statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import { expandOwnerTemplate, matchOwnerClones } from './local-clones.js';
+import { expandOwnerTemplate, type LocalClone, matchOwnerClones } from './local-clones.js';
 import { expandGlobPath, expandTilde, GLOB_MAGIC } from './path.js';
 import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker } from './template.js';
 
@@ -29,10 +29,11 @@ export interface FindInSrcDirsArgs {
  * last segment re-rooted at `<dir>`. Rung 2 wildcards {owner} only for a bare
  * name — a resolved owner is applied literally, so the search can never land
  * in a different owner's checkout and can never come back with more than one
- * path. These directories are search-only: a miss never turns one of them into
- * a clone destination.
+ * path. A rung-2 hit carries the owner segment it recovered; a rung-1 hit
+ * can't know the owner, so it carries `''`. These directories are search-only:
+ * a miss never turns one of them into a clone destination.
  */
-export function findInSrcDirs(args: FindInSrcDirsArgs): string[] {
+export function findInSrcDirs(args: FindInSrcDirsArgs): LocalClone[] {
   const isDirectory = args.isDirectory ?? isDirectorySync;
   const expandGlob = args.expandGlob ?? expandGlobPath;
   const worktreeMarker = deriveWorktreeMarker(args.cloneTemplate, args.worktreeTemplate ?? '');
@@ -44,7 +45,7 @@ export function findInSrcDirs(args: FindInSrcDirsArgs): string[] {
   for (const dir of expandSrcDirs(args.srcDirs, args.home, expandGlob)) {
     const named = join(dir, args.name);
     if (isDirectory(named)) {
-      return [named];
+      return [{ path: named, owner: '' }];
     }
     // Rung 2: the clone template's last segment re-rooted at `dir`. A bare name
     // globs the owner and drops worktree siblings; a resolved owner is literal.
@@ -52,7 +53,7 @@ export function findInSrcDirs(args: FindInSrcDirsArgs): string[] {
       if (marked.ok) {
         const clones = matchOwnerClones(join(dir, basename(marked.value)), worktreeMarker, expandGlob);
         if (clones.length) {
-          return clones.map((clone) => clone.path);
+          return clones;
         }
       }
       continue;
@@ -62,7 +63,7 @@ export function findInSrcDirs(args: FindInSrcDirsArgs): string[] {
     if (applied.ok) {
       const candidate = join(dir, basename(expandTilde(applied.value, args.home)));
       if (isDirectory(candidate)) {
-        return [candidate];
+        return [{ path: candidate, owner: args.owner! }];
       }
     }
   }

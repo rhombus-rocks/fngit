@@ -105,6 +105,16 @@ describe('locate — a bare name settled on disk', () => {
     expect(gh.log.api).toEqual([]);
   });
 
+  test('found via an extra root fills in the owner segment the scan recovered', async () => {
+    const checkout = mkdirp(HOME, '.local/src/runtime@dotnet');
+    const found = await locate('runtime',
+      options({
+        settings: { cloneTemplate: '~/src/{repo}@{owner}', worktreeTemplate: '~/src/{repo}@{owner}+{input}',
+          additionalSrcDirs: ['~/.local/src'], hostAliases: { 'github.com': 'gh' } },
+      }));
+    expect(found).toMatchObject({ type: 'local', path: checkout, ref: expect.objectContaining({ owner: 'dotnet' }) });
+  });
+
   test('the clone template root outranks the extra roots', async () => {
     const clone = mkdirp(HOME, 'src/runtime@dotnet');
     mkdirp(HOME, '.local/src/runtime@microsoft');
