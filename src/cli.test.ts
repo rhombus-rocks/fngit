@@ -32,7 +32,11 @@ describe('fngit shadowing git safely', () => {
     expect(result.stderr).toContain('FNGIT_GIT');
   });
 
-  test('FNGIT_GIT overrides which git runs, and passthrough args arrive unchanged', () => {
+  // Shell-script fakes only work on POSIX; the FNGIT_GIT mechanism is tested
+  // via the FNGIT_DEPTH guard above on all platforms.
+  const posixOnly = process.platform === 'win32' ? test.skip : test;
+
+  posixOnly('FNGIT_GIT overrides which git runs, and passthrough args arrive unchanged', () => {
     const binDir = mkdtempSync(join(tmpdir(), 'fngit-fakegit-'));
     const fakeGit = join(binDir, 'fake-git.sh');
     writeFileSync(fakeGit, '#!/bin/sh\nprintf \'%s\\n\' "$@"\n');
@@ -44,7 +48,7 @@ describe('fngit shadowing git safely', () => {
     expect(result.status).toBe(0);
   });
 
-  test('a git spawned by fngit carries FNGIT_DEPTH, so a shadowing loop trips the recursion guard', () => {
+  posixOnly('a git spawned by fngit carries FNGIT_DEPTH, so a shadowing loop trips the recursion guard', () => {
     const binDir = mkdtempSync(join(tmpdir(), 'fngit-fakegit-'));
     const fakeGit = join(binDir, 'fake-git.sh');
     writeFileSync(fakeGit, '#!/bin/sh\nprintf \'%s\\n\' "$FNGIT_DEPTH"\n');
@@ -64,12 +68,16 @@ describe('fngit clone — decorated path', () => {
     const existing = join(clonesRoot, 'fnclaude@testowner');
     mkdirSync(existing, { recursive: true });
     mkdirSync(join(home, '.claude'), { recursive: true });
+    // Use forward slashes in the template — expandTilde normalizes to native separators.
+    const template = `${clonesRoot.replace(/\\/g, '/')}/{repo}@{owner}`;
     writeFileSync(join(home, '.claude', 'settings.json'),
-      JSON.stringify({ repoSettings: { cloneTemplate: `${clonesRoot}/{repo}@{owner}` } }));
+      JSON.stringify({ repoSettings: { cloneTemplate: template } }));
 
-    const result = runCli(['clone', 'fnclaude'], { HOME: home });
+    // On win32 the home dir env var is USERPROFILE, not HOME.
+    const homeEnv: Record<string, string> = process.platform === 'win32' ? { USERPROFILE: home } : { HOME: home };
+    const result = runCli(['clone', 'fnclaude'], homeEnv);
 
-    expect(result.stdout).toBe(`${existing}\n`);
+    expect(result.stdout.trim()).toBe(existing);
     expect(result.status).toBe(0);
   });
 });
