@@ -1,6 +1,6 @@
 import { isDefined } from '@rhombus-toolkit/type-guards';
 import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 
 /** Everything the locator needs from configuration, once every tier has been merged. */
 export interface LocateSettings {
@@ -43,27 +43,32 @@ export interface DefaultSettingsPaths {
   userHostAliases: string;
 }
 
-/** Platform-specific default paths, injectable so tests cover all three platforms on one machine. */
+/**
+ * Platform-specific default paths, injectable so tests cover all three
+ * platforms on one machine. Uses posix/win32 path.join so the returned paths
+ * match the target platform regardless of where the test runs.
+ */
 export function defaultSettingsPaths(platform: Platform, env: Readonly<Record<string, string | undefined>>,
   home: string): DefaultSettingsPaths
 {
+  const pjoin = platform === 'win32' ? win32.join : posix.join;
   switch (platform) {
     case 'linux': {
       return { managedSettings: '/etc/claude-code/managed-settings.json',
         systemHostAliases: '/usr/share/fnrhombus/host-aliases.json',
-        userHostAliases: join(env.XDG_DATA_HOME ?? join(home, '.local/share'), 'fnrhombus/host-aliases.json') };
+        userHostAliases: pjoin(env.XDG_DATA_HOME ?? pjoin(home, '.local/share'), 'fnrhombus/host-aliases.json') };
     }
     case 'darwin': {
       return { managedSettings: '/Library/Application Support/ClaudeCode/managed-settings.json',
         systemHostAliases: '/Library/Application Support/fnrhombus/host-aliases.json',
-        userHostAliases: join(env.XDG_DATA_HOME ?? join(home, '.local/share'), 'fnrhombus/host-aliases.json') };
+        userHostAliases: pjoin(env.XDG_DATA_HOME ?? pjoin(home, '.local/share'), 'fnrhombus/host-aliases.json') };
     }
     case 'win32': {
       const programData = env.ProgramData ?? 'C:\\ProgramData';
-      const localAppData = env.LOCALAPPDATA ?? join(home, 'AppData\\Local');
-      return { managedSettings: join(programData, 'ClaudeCode\\managed-settings.json'),
-        systemHostAliases: join(programData, 'fnrhombus\\host-aliases.json'),
-        userHostAliases: join(localAppData, 'fnrhombus\\host-aliases.json') };
+      const localAppData = env.LOCALAPPDATA ?? pjoin(home, 'AppData', 'Local');
+      return { managedSettings: pjoin(programData, 'ClaudeCode', 'managed-settings.json'),
+        systemHostAliases: pjoin(programData, 'fnrhombus', 'host-aliases.json'),
+        userHostAliases: pjoin(localAppData, 'fnrhombus', 'host-aliases.json') };
     }
   }
 }

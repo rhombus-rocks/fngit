@@ -1,5 +1,7 @@
 import type { Func } from '@rhombus-toolkit/types';
 
+import { normalize } from 'node:path';
+
 import { expandGlobPath, expandTilde } from './path.js';
 import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker } from './template.js';
 
@@ -51,7 +53,7 @@ export function expandOwnerTemplate(
   if (!applied.ok) {
     return applied;
   }
-  return { ok: true, value: expandTilde(applied.value, args.home) };
+  return { ok: true, value: normalize(expandTilde(applied.value, args.home)) };
 }
 
 /**

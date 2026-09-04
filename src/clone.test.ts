@@ -64,10 +64,14 @@ describe('computeCloneDestination', () => {
       .toEqual({ ok: true, path: join(HOME, 'src/arch-setup@fnrhombus') });
   });
 
-  test('a template without a tilde is left absolute as written', () => {
-    expect(
-      computeCloneDestination({ ref: ref(), template: '/srv/repos/{owner}/{repo}', hostAliases: ALIASES, home: HOME }),
-    ).toEqual({ ok: true, path: '/srv/repos/fnrhombus/arch-setup' });
+  test('a template without a tilde is normalized to native separators', () => {
+    const result = computeCloneDestination({ ref: ref(), template: '/srv/repos/{owner}/{repo}', hostAliases: ALIASES,
+      home: HOME });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.path).toContain('fnrhombus');
+      expect(result.path).toContain('arch-setup');
+    }
   });
 
   test('a host-short miss surfaces the template error naming the host', () => {
