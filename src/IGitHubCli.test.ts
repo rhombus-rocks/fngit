@@ -71,4 +71,16 @@ describe('splitLines', () => {
   test('empty input yields nothing', () => {
     expect([...splitLines([])]).toEqual([]);
   });
+
+  test('\\r\\n line endings are normalized to \\n', () => {
+    expect([...splitLines(['line one\r\nline two\r\n'])]).toEqual(['line one\n', 'line two\n']);
+  });
+
+  test('mixed \\n and \\r\\n line endings', () => {
+    expect([...splitLines(['a\nb\r\nc\n'])]).toEqual(['a\n', 'b\n', 'c\n']);
+  });
+
+  test('\\r\\n split across chunk boundaries', () => {
+    expect([...splitLines(['line\r', '\nnext\n'])]).toEqual(['line\n', 'next\n']);
+  });
 });
