@@ -156,3 +156,7 @@ shell aliases (owner: "maybe the user path overrides the system path var?"; rese
 - **Windows PATH order**: system entries precede user entries, so a user-PATH insertion does not
   override a system-installed git; the profile prepend does (per shell), and the wizard notes the
   system-PATH option for all-process coverage. cmd.exe gets a note only.
+- **Windows, ruled**: the wizard inserts the shim directory at the TOP of the *system* PATH
+  (elevated; the UAC prompt is acceptable), so every process is covered — not the user PATH, which
+  Windows appends after the system entries. Use the .NET environment API from an elevated
+  PowerShell, never `setx /M` (it truncates at 1024 characters).
