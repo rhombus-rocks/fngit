@@ -248,15 +248,10 @@ directory entry) runs `dprint check` and `bun run lint` before every commit.
 
 ## Release
 
-Every PR merge to `main` runs the `Release` workflow's `publish-next` job:
+Every PR merge to `main` runs the `Release` workflow's `publish` job:
 semantic-release reads the conventional-commit history, determines the next
-version, and publishes it to npm under the `@next` dist-tag with a GitHub
-pre-release.
-
-Promotion to `@latest` is a manual gate — run the `Release` workflow via
-"Run workflow" in the Actions UI; the `promote` job is gated by the
-`production` environment and requires reviewer approval before it moves the
-same artifact from `@next` to `@latest`.
+version, publishes it to npm under the `@latest` dist-tag with provenance,
+and creates the GitHub release.
 
 See `CLAUDE.md` for the full branch policy, TDD requirement, and commit
 conventions this repo follows.

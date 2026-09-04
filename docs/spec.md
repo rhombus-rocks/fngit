@@ -111,3 +111,48 @@ Owner's words, 2026-09-03. Saved verbatim on request; no design work has been do
 > system git?'.
 >
 > tbc, all other argument configurations should pass through to git
+
+### Install wizard — defaults ruling (2026-09-04)
+
+Owner: "for each step in the wizard, showing current is fine, but there needs to be an answer
+offered for *default*. the install command should accept `-y` to accept all defaults. there should
+be a way to reset to default." Matching `npm init` was proposed and accepted as the model:
+
+- Every prompt shows the current value (when set) and names the recommended value; Enter keeps the
+  current value, typing `default` picks the recommended one.
+- `-y` / `--yes` answers every prompt with its Enter-default — like `npm init -y`, a re-run on a
+  configured machine changes nothing.
+- `--reset` makes the recommended value the Enter-default for every prompt, so `-y --reset`
+  restores the recommended setup non-interactively.
+- The settings file is merged, never overwritten.
+
+### Interception rule (2026-09-04)
+
+Owner: "all install shapes and one single shape clone are intercepted, everything else passes
+through." So `fngit install …` with ANY arguments is fngit's own command — unknown options are a
+usage error from fngit, never handed to git — while `clone` is intercepted only in the
+single-positional shape (`fngit clone <ref> [git flags…]`), and every other invocation is git's.
+
+### Config location and shadow mechanism (2026-09-04)
+
+Owner, on the wizard design list: prerequisites check, template validation with preview, re-run /
+`--yes` / `--dry-run`, and the non-TTY rule are accepted. **fngit's settings must NOT live in
+Claude Code's `settings.json`** — the owner will change the worktree-paths hook plugin to read
+fngit's file instead. Open: an XDG location versus a dotfile directly under `~/` (owner leans
+dotfile; thoughts requested). Open: shadowing git via a `git` shim on a user PATH entry instead of
+shell aliases (owner: "maybe the user path overrides the system path var?"; research requested).
+
+### Config file and shim — ruled (2026-09-04)
+
+- **Settings live in `~/.fngitrc`, JSON**: `cloneTemplate`, `worktreeTemplate`, `additionalSrcDirs`,
+  `hostAliases` (the host-alias files are gone — aliases are a key in the same file). One
+  location on every platform (`os.homedir()`); `FNGIT_CONFIG=<path>` overrides it. No project,
+  managed, or system tiers; no reading of Claude Code's `settings.json` anywhere.
+- **Shadowing git is a shim on PATH, never an alias**: a `git` shim (`exec fngit "$@"`; `git.cmd`
+  → `@fngit %*` on Windows) in `~/.local/share/fngit/shims` (`%LOCALAPPDATA%\fngit\shims` on
+  Windows), and an idempotent marked block that PREPENDS that directory to PATH in `~/.bashrc`,
+  `~/.zshrc`, fish `conf.d`, and the PowerShell profile. `--remove-shadow` removes the blocks and
+  the shim. The real-git resolver must skip the shim directory.
+- **Windows PATH order**: system entries precede user entries, so a user-PATH insertion does not
+  override a system-installed git; the profile prepend does (per shell), and the wizard notes the
+  system-PATH option for all-process coverage. cmd.exe gets a note only.
