@@ -193,23 +193,41 @@ same stdout/stderr, same exit code, same behavior for a signal that kills it.
 
 `loadLocateSettings({ home, cwd })` reads the `repoSettings` block of four
 tiers, later ones winning field by field. It also accepts optional
-`managedPath` and `systemAliasesPath` overrides for the two system-absolute
-locations below, defaulting to them — injectable so a test can point the chain
-at a temp directory instead of the real system files:
+`managedPath`, `systemAliasesPath`, and `userAliasesPath` overrides for the
+system- and user-absolute locations below, defaulting to them — injectable so
+a test can point the chain at a temp directory instead of the real system files:
 
 1. `<home>/.claude/settings.json`
 2. `<cwd>/.claude/settings.json`
 3. `<cwd>/.claude/settings.local.json`
-4. `/etc/claude-code/managed-settings.json`
+4. Managed settings (see platform table below)
 
 It reads `cloneTemplate`, `worktreeTemplate` and `additionalSrcDirs` — the last
 accepting a single path or a list, and replacing rather than extending a lower
 tier. Every failure degrades silently: an unreadable, malformed or
 wrong-shaped file contributes nothing rather than failing the lookup.
 
-Host aliases for the `{host-short}` placeholder come from
-`/usr/share/fnrhombus/host-aliases.json` and then
-`~/.local/share/fnrhombus/host-aliases.json`, the user's keys winning.
+Host aliases for the `{host-short}` placeholder come from a system file and
+then a user file (see platform table below), the user's keys winning.
+
+## Platforms
+
+Linux, macOS, and Windows are supported. CI tests all three on every PR.
+
+Templates are written with forward slashes (e.g. `~/src/{repo}@{owner}`);
+expansion produces native paths via `path.join`/`path.normalize`.
+
+### Where settings come from
+
+`defaultSettingsPaths(platform, env, home)` returns the platform-specific
+locations. The function is injectable so every platform's branch is testable
+on a single machine.
+
+| File                | Linux                                                                     | macOS                                                           | Windows                                          |
+| ------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| Managed settings    | `/etc/claude-code/managed-settings.json`                                  | `/Library/Application Support/ClaudeCode/managed-settings.json` | `%ProgramData%\ClaudeCode\managed-settings.json` |
+| System host aliases | `/usr/share/fnrhombus/host-aliases.json`                                  | `/Library/Application Support/fnrhombus/host-aliases.json`      | `%ProgramData%\fnrhombus\host-aliases.json`      |
+| User host aliases   | `$XDG_DATA_HOME/fnrhombus/host-aliases.json` (default `~/.local/share/…`) | same                                                            | `%LOCALAPPDATA%\fnrhombus\host-aliases.json`     |
 
 ## Development
 
