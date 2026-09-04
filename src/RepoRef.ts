@@ -45,7 +45,7 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
   if (input === '') {
     return { ok: false, error: 'empty repo reference' };
   }
-  if (input.startsWith('/') || input.startsWith('~') || input.startsWith('./') || input.startsWith('../')) {
+  if (isPathLike(input)) {
     return { ok: false, error: `path-like reference ${JSON.stringify(input)} is not a repo shorthand` };
   }
   let body = input;
@@ -127,6 +127,16 @@ export function parseRepoRef(input: string): ParseRepoRefResult {
 /** Whether a segment is the current- or parent-directory marker, which no repo owner or name is. */
 function isDotSegment(segment: string): boolean {
   return segment === '.' || segment === '..';
+}
+
+const DRIVE_LETTER_RE = /^[A-Za-z]:[\\/]/;
+
+/** Whether the input looks like a filesystem path rather than a repo reference. */
+export function isPathLike(input: string): boolean {
+  // POSIX: /, ~, ./, ../
+  // Windows: \, \\, .\, ..\, drive letter (C:\, D:/)
+  return input.startsWith('/') || input.startsWith('~') || input.startsWith('./') || input.startsWith('../')
+    || input.startsWith('.\\') || input.startsWith('..\\') || input.startsWith('\\') || DRIVE_LETTER_RE.test(input);
 }
 
 /** Whether the reference named an owner, rather than leaving it to a lookup. */

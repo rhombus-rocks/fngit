@@ -41,7 +41,9 @@ export function* splitLines(chunks: Iterable<string>): Generator<string> {
     pending += chunk;
     let newlineIdx = pending.indexOf('\n');
     while (newlineIdx >= 0) {
-      yield pending.slice(0, newlineIdx + 1);
+      // Strip a trailing \r so \r\n lines are yielded as \n-terminated.
+      const lineEnd = newlineIdx > 0 && pending[newlineIdx - 1] === '\r' ? newlineIdx - 1 : newlineIdx;
+      yield pending.slice(0, lineEnd) + '\n';
       pending = pending.slice(newlineIdx + 1);
       newlineIdx = pending.indexOf('\n');
     }

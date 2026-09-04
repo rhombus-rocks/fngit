@@ -63,8 +63,9 @@ describe('findInSrcDirs — the two rungs', () => {
   });
 
   test('a symlink to a checkout resolves', () => {
-    mkdirp(HOME, 'extra/dotnet-runtime');
-    symlinkSync('dotnet-runtime', join(HOME, 'extra/runtime@dotnet'));
+    const target = mkdirp(HOME, 'extra/dotnet-runtime');
+    // 'junction' is ignored on POSIX but required on win32 for directory symlinks.
+    symlinkSync(target, join(HOME, 'extra/runtime@dotnet'), 'junction');
     expect(findInSrcDirs(args())).toEqual([clone(join(HOME, 'extra/runtime@dotnet'), 'dotnet')]);
   });
 

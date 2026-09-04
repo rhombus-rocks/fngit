@@ -7,7 +7,6 @@ name: Release
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -15,12 +14,11 @@ concurrency:
 
 jobs:
 
-  # ── Publish @next ─────────────────────────────────────────────────────────
+  # ── Publish @latest ──────────────────────────────────────────────────────
   # Runs on every push to main. Uses semantic-release to determine the version
-  # from conventional commits, publish to npm under the @next dist-tag, and
-  # create a GitHub pre-release.
-  publish-next:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  # from conventional commits, publish it to npm under the @latest dist-tag,
+  # and create a GitHub release.
+  publish:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # create git tags and GitHub releases
@@ -41,41 +39,3 @@ jobs:
       - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── Promote @next → @latest ───────────────────────────────────────────────
-  # Triggered manually via "Run workflow" in the GitHub Actions UI.
-  # Reads whatever version is currently on @next, promotes it to @latest on
-  # npm, and marks the corresponding GitHub pre-release as the latest release.
-  # No rebuild — the same artifact is just re-tagged.
-  promote:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    environment: production
-    permissions:
-      contents: write
-      id-token: write   # OIDC — npm trusted publisher auth
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      - name: Resolve @next version
-        id: resolve
-        run: |
-          PACKAGE=$(node -p "require('./package.json').name")
-          VERSION=$(npm view "$PACKAGE" dist-tags.next 2>/dev/null)
-          if [ -z "$VERSION" ]; then
-            echo "::error::No @next version found for $PACKAGE — nothing to promote."
-            exit 1
-          fi
-          echo "package=$PACKAGE" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Promoting $PACKAGE@$VERSION (@next → @latest)"
-      - name: Promote @next → @latest on npm
-        run: npm dist-tag add ${{ steps.resolve.outputs.package }}@${{ steps.resolve.outputs.version }} latest
-      - name: Promote GitHub pre-release → latest release
-        run: gh release edit ${{ steps.resolve.outputs.tag }} --prerelease=false --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

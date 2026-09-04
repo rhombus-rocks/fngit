@@ -13,24 +13,19 @@ Worktree mechanics, branch/PR cleanup, and templated paths are governed by `~/.c
 
 ## Release flow
 
-This repo uses [semantic-release](https://semantic-release.gitbook.io/) with a two-stage dist-tag promotion:
+This repo uses [semantic-release](https://semantic-release.gitbook.io/):
 
 - Every push to `main` (necessarily via PR merge — see above) runs the
-  `Release` workflow's (`release.yml`) `publish-next` job. semantic-release
+  `Release` workflow's (`release.yml`) `publish` job. semantic-release
   reads the conventional-commit history, determines the next version,
-  publishes to npm under the `@next` dist-tag, and creates a GitHub
-  **pre-release**.
-- Promotion to `@latest` is a **manual gate**. Run the `Release` workflow
-  via workflow_dispatch ("Run workflow" in the Actions UI); the `promote`
-  job is gated by the `production` environment, which requires reviewer
-  approval. It moves the same artifact from `@next` to `@latest` on npm
-  and converts the GitHub pre-release into the latest release. No
-  rebuild — the @next version is the @latest version.
+  publishes it to npm under the `@latest` dist-tag with provenance, and
+  creates the GitHub release.
 - Auto-merge is enabled on every non-draft PR
   (`.github/workflows/auto-merge.yml`); it fires the moment the `verify`
   status check is green.
 
-Effectively: every PR merge to `main` ships a `@next` pre-release. `@latest` is what users get on `npm install <pkg>` by default — that's the gated step.
+Effectively: every PR merge to `main` ships straight to `@latest` — no
+manual promotion step.
 
 ### Version bump rules (conventional commits)
 
@@ -52,9 +47,8 @@ code change.**
 Auto-merge is enabled on every non-draft PR (`.github/workflows/auto-merge.yml`);
 it fires the moment the `verify` status check is green. Without TDD, a PR
 can land before any test captures the bug behavior — which means future
-regressions slip in silently. The `@next` → `@latest` promotion gate
-catches gross issues, but TDD is what catches the subtle ones that pass
-human review.
+regressions slip in silently, straight to `@latest`. TDD is what catches
+the subtle ones that pass human review.
 
 The workflow:
 

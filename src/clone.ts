@@ -1,6 +1,6 @@
 import type { Func } from '@rhombus-toolkit/types';
 import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, normalize } from 'node:path';
 
 import { type IGitHubCli, NOT_FOUND_SIGNATURES } from './IGitHubCli.js';
 import { expandTilde } from './path.js';
@@ -48,7 +48,7 @@ export function computeCloneDestination(args: ComputeCloneDestinationArgs): Comp
   if (!applied.ok) {
     return applied;
   }
-  return { ok: true, path: expandTilde(applied.value, args.home) };
+  return { ok: true, path: normalize(expandTilde(applied.value, args.home)) };
 }
 
 /** Create the destination's parent directory, then clone into it. */
