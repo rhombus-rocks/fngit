@@ -4,6 +4,11 @@
 
 **No direct commits to `main`.** All changes land via PR from a feature branch — `main` is protected, even the maintainer goes through the PR flow.
 
+**Every change is made in a worktree, never in the main checkout** — exactly as the user prefs'
+"All code edits happen in a worktree" rule describes (templated path, chosen branch name, draft
+PR up front). This repo has no opt-out; being on a branch in the main checkout is the failure
+mode, not an exception.
+
 Worktree mechanics, branch/PR cleanup, and templated paths are governed by `~/.claude/CLAUDE.git.md`. Don't restate them here.
 
 ## Release flow
