@@ -1,20 +1,31 @@
 import { assertNever } from '@rhombus-toolkit/type-guards';
 
+import { type InstallOptions, parseInstallArgs } from './install-plan.js';
 import type { LocateFailure } from './LocateError.js';
 import { parseRepoRef } from './RepoRef.js';
 
-export type CliPlan = { kind: 'passthrough'; args: readonly string[]; } | { kind: 'clone'; input: string;
-  cloneArgs: readonly string[]; } | { kind: 'reject-workspace'; input: string; };
+export type CliPlan = { kind: 'passthrough'; args: readonly string[]; installHint?: true; } | { kind: 'clone';
+  input: string; cloneArgs: readonly string[]; } | { kind: 'reject-workspace'; input: string; } | { kind: 'install';
+  options: InstallOptions; };
 
 const PATH_LIKE_PREFIXES = ['.', '/', '~'];
 
 /**
- * Decide whether a `git` invocation is a decoratable `clone <ref>` — a bare
- * reference (not a filesystem path) with no explicit destination argument of
- * its own — or should pass straight through to `git` unchanged.
+ * Decide whether a `git` invocation is a decoratable `clone <ref>`, an
+ * `install` wizard invocation, or should pass straight through to `git`
+ * unchanged.
  */
 export function planInvocation(argv: readonly string[]): CliPlan {
   const [command, input, second, ...rest] = argv;
+
+  if (command === 'install') {
+    const parsed = parseInstallArgs(argv.slice(1));
+    if (parsed.ok) {
+      return { kind: 'install', options: parsed.options };
+    }
+    return { kind: 'passthrough', args: argv, installHint: true };
+  }
+
   if (command !== 'clone' || input === undefined || !isDecoratable(input)) {
     return { kind: 'passthrough', args: argv };
   }

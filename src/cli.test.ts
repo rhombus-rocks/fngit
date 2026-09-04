@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -54,6 +54,47 @@ describe('fngit shadowing git safely', () => {
 
     expect(result.stdout).toBe('1\n');
     expect(result.status).toBe(0);
+  });
+});
+
+describe('fngit install — dispatch hint', () => {
+  test('install with unrecognised args prints the hint to stderr and passes to git', () => {
+    const result = runCli(['install', 'some-package']);
+    expect(result.stderr).toContain("fngit: 'install' with those arguments is handed to git");
+    expect(result.stderr).toContain('fngit install --help');
+  });
+});
+
+describe('fngit install — help', () => {
+  test('install --help prints usage', () => {
+    const result = runCli(['install', '--help']);
+    expect(result.stdout).toContain('Usage: fngit install');
+    expect(result.stdout).toContain('--clone-template');
+    expect(result.status).toBe(0);
+  });
+});
+
+describe('fngit install — non-TTY guard', () => {
+  test('non-interactive stdin with unanswered questions and no --yes exits 2', () => {
+    // The test process's stdin is a pipe (non-TTY), so this triggers the guard.
+    const result = runCli(['install']);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('non-interactive stdin');
+  });
+});
+
+describe('fngit install — subprocess dry-run', () => {
+  test('--yes --dry-run --no-plugin --no-shadow-git prints planned changes and writes nothing', () => {
+    const home = mkdtempSync(join(tmpdir(), 'fngit-install-'));
+    mkdirSync(join(home, '.claude'), { recursive: true });
+
+    const result = runCli(['install', '--yes', '--dry-run', '--no-plugin', '--no-shadow-git'], { HOME: home });
+
+    expect(result.status).toBe(0);
+    // The plan should mention writing settings since none are configured.
+    expect(result.stdout).toContain('settings');
+    // With --dry-run, no files should have been written.
+    expect(existsSync(join(home, '.claude/settings.json'))).toBe(false);
   });
 });
 

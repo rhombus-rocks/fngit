@@ -80,6 +80,46 @@ describe('planInvocation', () => {
     expect(planInvocation(['clone', 'gh:owner/name+ws'])).toEqual({ kind: 'reject-workspace',
       input: 'gh:owner/name+ws' });
   });
+
+  test('install with no args — install command', () => {
+    const plan = planInvocation(['install']);
+    expect(plan.kind).toBe('install');
+  });
+
+  test('install --yes — install command', () => {
+    const plan = planInvocation(['install', '--yes']);
+    expect(plan.kind).toBe('install');
+    if (plan.kind === 'install') {
+      expect(plan.options.yes).toBe(true);
+    }
+  });
+
+  test('install --dry-run --no-plugin — install command', () => {
+    const plan = planInvocation(['install', '--dry-run', '--no-plugin']);
+    expect(plan.kind).toBe('install');
+    if (plan.kind === 'install') {
+      expect(plan.options.dryRun).toBe(true);
+      expect(plan.options.plugin).toBe(false);
+    }
+  });
+
+  test('install --help — install command', () => {
+    const plan = planInvocation(['install', '--help']);
+    expect(plan.kind).toBe('install');
+    if (plan.kind === 'install') {
+      expect(plan.options.help).toBe(true);
+    }
+  });
+
+  test('install with unrecognised arg — passthrough with hint', () => {
+    const plan = planInvocation(['install', 'some-package']);
+    expect(plan).toEqual({ kind: 'passthrough', args: ['install', 'some-package'], installHint: true });
+  });
+
+  test('install with unknown flag — passthrough with hint', () => {
+    const plan = planInvocation(['install', '--depth', '1']);
+    expect(plan).toEqual({ kind: 'passthrough', args: ['install', '--depth', '1'], installHint: true });
+  });
 });
 
 describe('renderLocateFailure', () => {
