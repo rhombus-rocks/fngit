@@ -132,3 +132,12 @@ Owner: "all install shapes and one single shape clone are intercepted, everythin
 through." So `fngit install …` with ANY arguments is fngit's own command — unknown options are a
 usage error from fngit, never handed to git — while `clone` is intercepted only in the
 single-positional shape (`fngit clone <ref> [git flags…]`), and every other invocation is git's.
+
+### Config location and shadow mechanism (2026-09-04)
+
+Owner, on the wizard design list: prerequisites check, template validation with preview, re-run /
+`--yes` / `--dry-run`, and the non-TTY rule are accepted. **fngit's settings must NOT live in
+Claude Code's `settings.json`** — the owner will change the worktree-paths hook plugin to read
+fngit's file instead. Open: an XDG location versus a dotfile directly under `~/` (owner leans
+dotfile; thoughts requested). Open: shadowing git via a `git` shim on a user PATH entry instead of
+shell aliases (owner: "maybe the user path overrides the system path var?"; research requested).
