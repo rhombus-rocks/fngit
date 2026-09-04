@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { loadHostAliases, loadLocateSettings, loadRepoSettings, type LoadRepoSettingsArgs } from './settings.js';
+import { defaultSettingsPaths, loadHostAliases, loadLocateSettings, loadRepoSettings,
+  type LoadRepoSettingsArgs } from './settings.js';
 
 let tmpRoot: string;
 
@@ -229,10 +230,11 @@ describe('loadLocateSettings — the wired-up chain', () => {
   // The managed tier and system host-aliases live at absolute system paths; the
   // tests point them at tmpdir so the chain never reads the developer's real
   // /etc/claude-code/managed-settings.json or /usr/share host-aliases file.
-  let hermetic: { managedPath: string; systemAliasesPath: string; };
+  let hermetic: { managedPath: string; systemAliasesPath: string; userAliasesPath: string; };
 
   beforeEach(() => {
-    hermetic = { managedPath: join(tmpRoot, 'no-managed.json'), systemAliasesPath: join(tmpRoot, 'no-system.json') };
+    hermetic = { managedPath: join(tmpRoot, 'no-managed.json'), systemAliasesPath: join(tmpRoot, 'no-system.json'),
+      userAliasesPath: join(tmpRoot, 'no-user-aliases.json') };
   });
 
   test('reads repoSettings from the user tier and aliases from the user data dir', () => {
@@ -242,8 +244,9 @@ describe('loadLocateSettings — the wired-up chain', () => {
     write(join(home, '.claude/settings.json'), {
       repoSettings: { cloneTemplate: '~/src/{repo}@{owner}', additionalSrcDirs: '~/.local/src' },
     });
-    write(join(home, '.local/share/fnrhombus/host-aliases.json'), { 'github.com': 'gh' });
-    const settings = loadLocateSettings({ home, cwd, ...hermetic });
+    const userAliases = join(tmpRoot, 'user-data-aliases.json');
+    write(userAliases, { 'github.com': 'gh' });
+    const settings = loadLocateSettings({ home, cwd, ...hermetic, userAliasesPath: userAliases });
     expect(settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
     expect(settings.worktreeTemplate).toBe('');
     expect(settings.additionalSrcDirs).toEqual(['~/.local/src']);
@@ -272,10 +275,13 @@ describe('loadLocateSettings — the wired-up chain', () => {
     const home = join(tmpRoot, 'home');
     const cwd = join(tmpRoot, 'project');
     mkdirSync(cwd, { recursive: true });
+    const userAliases = join(tmpRoot, 'conflict-user-aliases.json');
     write(hermetic.systemAliasesPath, { 'github.com': 'gh-sys', 'gitlab.com': 'gl' });
-    write(join(home, '.local/share/fnrhombus/host-aliases.json'), { 'github.com': 'gh-user' });
-    expect(loadLocateSettings({ home, cwd, ...hermetic }).hostAliases).toEqual({ 'github.com': 'gh-user',
-      'gitlab.com': 'gl' });
+    write(userAliases, { 'github.com': 'gh-user' });
+    expect(loadLocateSettings({ home, cwd, ...hermetic, userAliasesPath: userAliases }).hostAliases).toEqual({
+      'github.com': 'gh-user',
+      'gitlab.com': 'gl',
+    });
   });
 
   test('nothing configured anywhere → empty settings rather than a throw', () => {
@@ -288,5 +294,51 @@ describe('loadLocateSettings — the wired-up chain', () => {
     expect(settings.worktreeTemplate).toBe('');
     expect(settings.additionalSrcDirs).toEqual([]);
     expect(settings.hostAliases).toEqual({});
+  });
+});
+
+describe('defaultSettingsPaths — per-platform locations', () => {
+  const noEnv: Record<string, string | undefined> = {};
+
+  test('linux defaults', () => {
+    const paths = defaultSettingsPaths('linux', noEnv, '/home/tom');
+    expect(paths.managedSettings).toBe('/etc/claude-code/managed-settings.json');
+    expect(paths.systemHostAliases).toBe('/usr/share/fnrhombus/host-aliases.json');
+    expect(paths.userHostAliases).toBe('/home/tom/.local/share/fnrhombus/host-aliases.json');
+  });
+
+  test('linux with XDG_DATA_HOME', () => {
+    const paths = defaultSettingsPaths('linux', { XDG_DATA_HOME: '/custom/data' }, '/home/tom');
+    expect(paths.userHostAliases).toBe('/custom/data/fnrhombus/host-aliases.json');
+  });
+
+  test('darwin defaults', () => {
+    const paths = defaultSettingsPaths('darwin', noEnv, '/Users/tom');
+    expect(paths.managedSettings).toBe('/Library/Application Support/ClaudeCode/managed-settings.json');
+    expect(paths.systemHostAliases).toBe('/Library/Application Support/fnrhombus/host-aliases.json');
+    expect(paths.userHostAliases).toBe('/Users/tom/.local/share/fnrhombus/host-aliases.json');
+  });
+
+  test('darwin with XDG_DATA_HOME', () => {
+    const paths = defaultSettingsPaths('darwin', { XDG_DATA_HOME: '/custom/data' }, '/Users/tom');
+    expect(paths.userHostAliases).toBe('/custom/data/fnrhombus/host-aliases.json');
+  });
+
+  test('win32 defaults', () => {
+    const paths = defaultSettingsPaths('win32', noEnv, 'C:\\Users\\tom');
+    expect(paths.managedSettings).toMatch(/ProgramData.*ClaudeCode.*managed-settings\.json$/);
+    expect(paths.systemHostAliases).toMatch(/ProgramData.*fnrhombus.*host-aliases\.json$/);
+    expect(paths.userHostAliases).toMatch(/AppData.*Local.*fnrhombus.*host-aliases\.json$/);
+  });
+
+  test('win32 with ProgramData and LOCALAPPDATA', () => {
+    const env = { ProgramData: 'D:\\PData', LOCALAPPDATA: 'D:\\AppLocal' };
+    const paths = defaultSettingsPaths('win32', env, 'C:\\Users\\tom');
+    expect(paths.managedSettings).toContain('D:');
+    expect(paths.managedSettings).toContain('ClaudeCode');
+    expect(paths.systemHostAliases).toContain('D:');
+    expect(paths.systemHostAliases).toContain('fnrhombus');
+    expect(paths.userHostAliases).toContain('D:');
+    expect(paths.userHostAliases).toContain('fnrhombus');
   });
 });

@@ -29,10 +29,44 @@ export interface LoadHostAliasesArgs {
   userPath: string;
 }
 
-const MANAGED_SETTINGS_PATH = '/etc/claude-code/managed-settings.json';
-const SYSTEM_HOST_ALIASES_PATH = '/usr/share/fnrhombus/host-aliases.json';
-
 const STRING_FIELDS = ['cloneTemplate', 'worktreeTemplate'] as const satisfies ReadonlyArray<keyof RepoSettings>;
+
+export type Platform = 'linux' | 'darwin' | 'win32';
+
+/** The three system/user paths that vary by platform. */
+export interface DefaultSettingsPaths {
+  /** Managed settings written by an administrator. */
+  managedSettings: string;
+  /** System-wide host-alias file. */
+  systemHostAliases: string;
+  /** Per-user host-alias file. */
+  userHostAliases: string;
+}
+
+/** Platform-specific default paths, injectable so tests cover all three platforms on one machine. */
+export function defaultSettingsPaths(platform: Platform, env: Readonly<Record<string, string | undefined>>,
+  home: string): DefaultSettingsPaths
+{
+  switch (platform) {
+    case 'linux': {
+      return { managedSettings: '/etc/claude-code/managed-settings.json',
+        systemHostAliases: '/usr/share/fnrhombus/host-aliases.json',
+        userHostAliases: join(env.XDG_DATA_HOME ?? join(home, '.local/share'), 'fnrhombus/host-aliases.json') };
+    }
+    case 'darwin': {
+      return { managedSettings: '/Library/Application Support/ClaudeCode/managed-settings.json',
+        systemHostAliases: '/Library/Application Support/fnrhombus/host-aliases.json',
+        userHostAliases: join(env.XDG_DATA_HOME ?? join(home, '.local/share'), 'fnrhombus/host-aliases.json') };
+    }
+    case 'win32': {
+      const programData = env.ProgramData ?? 'C:\\ProgramData';
+      const localAppData = env.LOCALAPPDATA ?? join(home, 'AppData\\Local');
+      return { managedSettings: join(programData, 'ClaudeCode\\managed-settings.json'),
+        systemHostAliases: join(programData, 'fnrhombus\\host-aliases.json'),
+        userHostAliases: join(localAppData, 'fnrhombus\\host-aliases.json') };
+    }
+  }
+}
 
 export interface LoadLocateSettingsArgs {
   home: string;
@@ -41,16 +75,25 @@ export interface LoadLocateSettingsArgs {
   managedPath?: string;
   /** Path to the system host-aliases file; defaults to the system location. Injectable so tests stay hermetic. */
   systemAliasesPath?: string;
+  /** Path to the user host-aliases file; defaults to the platform-aware location. Injectable so tests stay hermetic. */
+  userAliasesPath?: string;
+  /** Platform for defaultSettingsPaths; defaults to the current process platform. */
+  platform?: Platform;
+  /** Environment for defaultSettingsPaths; defaults to process.env. */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** Read the settings chain rooted at `home` and `cwd`, plus the host-aliases layers. */
 export function loadLocateSettings(args: LoadLocateSettingsArgs): LocateSettings {
+  const platform = args.platform ?? process.platform as Platform;
+  const env = args.env ?? process.env;
+  const defaults = defaultSettingsPaths(platform, env, args.home);
   const repoSettings = loadRepoSettings({ userPath: join(args.home, '.claude/settings.json'),
     projectPath: join(args.cwd, '.claude/settings.json'), localPath: join(args.cwd, '.claude/settings.local.json'),
-    managedPath: args.managedPath ?? MANAGED_SETTINGS_PATH });
+    managedPath: args.managedPath ?? defaults.managedSettings });
   return { ...repoSettings,
-    hostAliases: loadHostAliases({ systemPath: args.systemAliasesPath ?? SYSTEM_HOST_ALIASES_PATH,
-      userPath: join(args.home, '.local/share/fnrhombus/host-aliases.json') }) };
+    hostAliases: loadHostAliases({ systemPath: args.systemAliasesPath ?? defaults.systemHostAliases,
+      userPath: args.userAliasesPath ?? defaults.userHostAliases }) };
 }
 
 /**
