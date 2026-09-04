@@ -125,3 +125,10 @@ be a way to reset to default." Matching `npm init` was proposed and accepted as 
 - `--reset` makes the recommended value the Enter-default for every prompt, so `-y --reset`
   restores the recommended setup non-interactively.
 - The settings file is merged, never overwritten.
+
+### Interception rule (2026-09-04)
+
+Owner: "all install shapes and one single shape clone are intercepted, everything else passes
+through." So `fngit install …` with ANY arguments is fngit's own command — unknown options are a
+usage error from fngit, never handed to git — while `clone` is intercepted only in the
+single-positional shape (`fngit clone <ref> [git flags…]`), and every other invocation is git's.
