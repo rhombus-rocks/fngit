@@ -32,4 +32,15 @@ describe('expandTilde', () => {
   test('empty string: unchanged', () => {
     expect(expandTilde('', home)).toBe('');
   });
+
+  test('~\\ prefix expands on win32', () => {
+    const winHome = 'C:\\Users\\tom';
+    // path.join on Linux will keep the backslash literal, but the tilde
+    // prefix is correctly stripped and the rest is joined to home.
+    expect(expandTilde('~\\src\\proj', winHome)).toMatch(/^C:\\Users\\tom/);
+  });
+
+  test('~\\ with a POSIX home still works', () => {
+    expect(expandTilde('~\\foo', home)).toMatch(/^\/home\/tom/);
+  });
 });

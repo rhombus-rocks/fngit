@@ -1,12 +1,12 @@
 import { globSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 
-/** Expand a leading `~` against `home`, the way a shell would. */
+/** Expand a leading `~` against `home`, the way a shell would — on win32, `~\` is also accepted. */
 export function expandTilde(input: string, home: string): string {
   if (input === '~') {
     return home;
   }
-  if (input.startsWith('~/')) {
+  if (input.startsWith('~/') || input.startsWith('~\\')) {
     return join(home, input.slice(2));
   }
   return input;
