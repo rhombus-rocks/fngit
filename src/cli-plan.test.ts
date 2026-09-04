@@ -41,6 +41,11 @@ describe('planInvocation', () => {
       args: ['clone', 'fnclaude', 'mydir'] });
   });
 
+  test('fngit clone somerepo ./some/path — passthrough, explicit destination wins even when path-shaped', () => {
+    expect(planInvocation(['clone', 'somerepo', './some/path'])).toEqual({ kind: 'passthrough',
+      args: ['clone', 'somerepo', './some/path'] });
+  });
+
   test('clone of a relative filesystem path — passthrough, not treated as a ref', () => {
     expect(planInvocation(['clone', './local-path'])).toEqual({ kind: 'passthrough', args: ['clone', './local-path'] });
   });

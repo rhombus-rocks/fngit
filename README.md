@@ -140,6 +140,41 @@ path-like first argument — passes straight through to `git clone`. A
 reference carrying a `+workspace` suffix is rejected (exit `2`); worktree
 support isn't implemented yet.
 
+```sh
+fngit clone somerepo ./some/path  # two positionals — the user chose the
+                                   # destination, so this runs git unchanged
+```
+
+### Use it as `git`
+
+`fngit` is safe to shadow your real `git` with, so every command you type
+gets `clone`'s lookup for free without changing how anything else behaves.
+
+Alias it in your shell:
+
+```sh
+# bash / zsh
+alias git=fngit
+
+# fish
+alias git fngit
+
+# PowerShell
+Set-Alias git fngit
+```
+
+Or put a `git` symlink (Linux/macOS) or shim (Windows) ahead of the real
+`git` on `PATH`. Either way, `fngit` always finds and runs the _real_ `git`
+underneath — it walks `PATH` itself, skipping any `git` that resolves back
+into fngit's own install, so it never recurses into itself even when it is
+the thing named `git`.
+
+If your setup somehow still loops — `git` pointing at fngit, which finds
+`git` on `PATH` and gets back to itself — fngit detects it and refuses to run
+rather than recursing forever, exit `126`. Set `FNGIT_GIT` to the real git
+binary's path to sidestep the lookup entirely; it always wins outright and
+skips the `PATH` walk.
+
 ### Exit codes
 
 | Code    | Meaning                                                                                                                                      |
@@ -147,7 +182,8 @@ support isn't implemented yet.
 | `0`     | The clone resolved (or already existed); its path was printed to stdout.                                                                     |
 | `1`     | `locate()` rejected with a [`LocateError`](#locateerror); its message (and, for an ambiguous result, one candidate per line) went to stderr. |
 | `2`     | The reference carried a `+workspace` suffix, which `fngit clone` doesn't support yet.                                                        |
-| `127`   | `git` itself isn't on `PATH`.                                                                                                                |
+| `126`   | fngit detected it would recurse into itself and refused to run — see [Use it as `git`](#use-it-as-git).                                      |
+| `127`   | The real `git` isn't on `PATH` (set `FNGIT_GIT` to point at it directly).                                                                    |
 | _other_ | A passed-through `git` invocation's own exit status.                                                                                         |
 
 Everything that isn't a decorated `clone` is `git`, verbatim — same flags,
