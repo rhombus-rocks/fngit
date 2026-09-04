@@ -111,3 +111,17 @@ Owner's words, 2026-09-03. Saved verbatim on request; no design work has been do
 > system git?'.
 >
 > tbc, all other argument configurations should pass through to git
+
+### Install wizard — defaults ruling (2026-09-04)
+
+Owner: "for each step in the wizard, showing current is fine, but there needs to be an answer
+offered for *default*. the install command should accept `-y` to accept all defaults. there should
+be a way to reset to default." Matching `npm init` was proposed and accepted as the model:
+
+- Every prompt shows the current value (when set) and names the recommended value; Enter keeps the
+  current value, typing `default` picks the recommended one.
+- `-y` / `--yes` answers every prompt with its Enter-default — like `npm init -y`, a re-run on a
+  configured machine changes nothing.
+- `--reset` makes the recommended value the Enter-default for every prompt, so `-y --reset`
+  restores the recommended setup non-interactively.
+- The settings file is merged, never overwritten.
