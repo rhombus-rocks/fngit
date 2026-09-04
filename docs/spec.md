@@ -141,3 +141,18 @@ Claude Code's `settings.json`** — the owner will change the worktree-paths hoo
 fngit's file instead. Open: an XDG location versus a dotfile directly under `~/` (owner leans
 dotfile; thoughts requested). Open: shadowing git via a `git` shim on a user PATH entry instead of
 shell aliases (owner: "maybe the user path overrides the system path var?"; research requested).
+
+### Config file and shim — ruled (2026-09-04)
+
+- **Settings live in `~/.fngitrc`, JSON**: `cloneTemplate`, `worktreeTemplate`, `additionalSrcDirs`,
+  `hostAliases` (the host-alias files are gone — aliases are a key in the same file). One
+  location on every platform (`os.homedir()`); `FNGIT_CONFIG=<path>` overrides it. No project,
+  managed, or system tiers; no reading of Claude Code's `settings.json` anywhere.
+- **Shadowing git is a shim on PATH, never an alias**: a `git` shim (`exec fngit "$@"`; `git.cmd`
+  → `@fngit %*` on Windows) in `~/.local/share/fngit/shims` (`%LOCALAPPDATA%\fngit\shims` on
+  Windows), and an idempotent marked block that PREPENDS that directory to PATH in `~/.bashrc`,
+  `~/.zshrc`, fish `conf.d`, and the PowerShell profile. `--remove-shadow` removes the blocks and
+  the shim. The real-git resolver must skip the shim directory.
+- **Windows PATH order**: system entries precede user entries, so a user-PATH insertion does not
+  override a system-installed git; the profile prepend does (per shell), and the wizard notes the
+  system-PATH option for all-process coverage. cmd.exe gets a note only.
