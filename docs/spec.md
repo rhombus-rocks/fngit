@@ -89,3 +89,19 @@ Ruled 2026-09-03 (owner):
 ## Open questions
 
 - **Should fncode itself then consume this library?** Out of scope until the owner says so.
+
+## Backlog — captured, not yet designed
+
+Owner's words, 2026-09-03. Saved verbatim on request; no design work has been done on it.
+
+> - `fngit install` (presuming `install` isn't a valid git command, give me suggestions if you
+>   recommend something different) sets up the config files.
+>   - run like i just showed it starts and interactive cli wizard that asks:
+>     - repo location / naming template (i can't remember if these are a single or two settings
+>       these days). show the way this system is set up as recommended. explain that for fnc to be
+>       at its best, it needs to be able to see the org, repo, and branch all at once without
+>       digging into and opening up repo files. be sure to show what templating options are
+>       available
+>     - install
+>   - values can be provided in args and then it won't be interactive
+>   - lib function(s) to set these settings (no interactivity, obviously)
