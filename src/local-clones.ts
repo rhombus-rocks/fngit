@@ -1,5 +1,7 @@
 import type { Func } from '@rhombus-toolkit/types';
 
+import { normalize } from 'node:path';
+
 import { expandGlobPath, expandTilde } from './path.js';
 import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker } from './template.js';
 
@@ -51,7 +53,7 @@ export function expandOwnerTemplate(
   if (!applied.ok) {
     return applied;
   }
-  return { ok: true, value: expandTilde(applied.value, args.home) };
+  return { ok: true, value: normalize(expandTilde(applied.value, args.home)) };
 }
 
 /**
@@ -67,7 +69,7 @@ export function matchOwnerClones(markedPattern: string, worktreeMarker: string,
   }
   const segments = markedPattern.split(OWNER_MARK);
   const globPattern = segments.join('*');
-  const ownerRe = new RegExp(`^${segments.map(escapeRegExp).join('([^/]+)')}$`);
+  const ownerRe = new RegExp(`^${segments.map(escapeRegExp).join('([^/\\\\]+)')}$`);
   return Iterator.from(expandGlob(globPattern)).map((path) => ({ path, owner: ownerRe.exec(path)?.[1] ?? '' })).filter((
     clone,
   ) => clone.owner !== '' && (worktreeMarker === '' || !clone.owner.includes(worktreeMarker))).toArray();

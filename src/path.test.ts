@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { join, normalize } from 'node:path';
 
 import { expandTilde } from './path.js';
 
@@ -10,8 +11,8 @@ describe('expandTilde', () => {
   });
 
   test('~/ prefix becomes home/...', () => {
-    expect(expandTilde('~/src/proj', home)).toBe('/home/tom/src/proj');
-    expect(expandTilde('~/foo', home)).toBe('/home/tom/foo');
+    expect(expandTilde('~/src/proj', home)).toBe(normalize(join(home, 'src/proj')));
+    expect(expandTilde('~/foo', home)).toBe(normalize(join(home, 'foo')));
   });
 
   test('mid-token ~ is left literal (matches shell behavior)', () => {
@@ -31,5 +32,17 @@ describe('expandTilde', () => {
 
   test('empty string: unchanged', () => {
     expect(expandTilde('', home)).toBe('');
+  });
+
+  test('~\\ prefix expands on win32', () => {
+    const winHome = 'C:\\Users\\tom';
+    expect(expandTilde('~\\src\\proj', winHome)).toMatch(/^C:\\Users\\tom/);
+  });
+
+  test('~\\ with a POSIX home still works', () => {
+    const result = expandTilde('~\\foo', home);
+    expect(result).toContain('home');
+    expect(result).toContain('tom');
+    expect(result).toContain('foo');
   });
 });

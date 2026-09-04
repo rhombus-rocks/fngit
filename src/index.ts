@@ -2,4 +2,5 @@ export { type GhApiResult, type GhCloneResult, GitHubCli, type IGitHubCli } from
 export { type LocalRepo, locate, type Located, type LocateOptions, type RemoteRepo } from './locate.js';
 export { LocateError, type LocateFailure } from './LocateError.js';
 export { parseRepoRef, type ParseRepoRefResult, type RepoRef } from './RepoRef.js';
-export { loadLocateSettings, type LocateSettings } from './settings.js';
+export { type DefaultSettingsPaths, defaultSettingsPaths, loadLocateSettings, type LocateSettings,
+  type Platform } from './settings.js';

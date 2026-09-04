@@ -2,6 +2,7 @@
 import { assertNever } from '@rhombus-toolkit/type-guards';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { constants } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -81,6 +82,11 @@ function runGit(args: readonly string[]): number {
     throw result.error;
   }
   if (result.signal !== null) {
+    if (process.platform === 'win32') {
+      const sigNum = constants.signals[result.signal as keyof typeof constants.signals];
+      process.stderr.write(`fngit: git terminated by ${result.signal}\n`);
+      return 128 + (sigNum ?? 1);
+    }
     process.kill(process.pid, result.signal);
     return 1;
   }

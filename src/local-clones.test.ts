@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { findLocalClones, type FindLocalClonesArgs, type FindLocalClonesResult,
-  type LocalClone } from './local-clones.js';
+import { findLocalClones, type FindLocalClonesArgs, type FindLocalClonesResult, type LocalClone,
+  matchOwnerClones } from './local-clones.js';
 
 let tmpRoot: string;
 let HOME: string;
@@ -139,5 +139,16 @@ describe('findLocalClones — the injectable glob seam', () => {
     } }));
     expect(seen).toEqual([join(HOME, 'src/fnclaude@*')]);
     expect(assertClones(found)).toEqual([{ path: join(HOME, 'src/fnclaude@dotnet'), owner: 'dotnet' }]);
+  });
+});
+
+describe('matchOwnerClones — owner regex excludes both separators', () => {
+  test('a backslash-separated Windows path recovers the owner without crossing a separator', () => {
+    // Template like ~/src/{owner}/{repo} on Windows produces a pattern where
+    // the owner sits between two backslash-separated segments. The regex must
+    // stop at the backslash, not eat fnrhombus\fnclaude as a single "owner".
+    const markedPattern = 'C:\\Users\\tom\\src\\\uFFFF\\fnclaude';
+    const clones = matchOwnerClones(markedPattern, '+', () => ['C:\\Users\\tom\\src\\fnrhombus\\fnclaude']);
+    expect(clones).toEqual([{ path: 'C:\\Users\\tom\\src\\fnrhombus\\fnclaude', owner: 'fnrhombus' }]);
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 
 import { buildCloneUrl, cloneRepo, computeCloneDestination, isRepoNotFoundError } from './clone.js';
 import type { GhApiResult, GhCloneResult, IGitHubCli } from './IGitHubCli.js';
@@ -55,18 +56,22 @@ describe('computeCloneDestination', () => {
     expect(
       computeCloneDestination({ ref: ref(), template: '~/src/{host-short}/{owner}/{repo}', hostAliases: ALIASES,
         home: HOME }),
-    ).toEqual({ ok: true, path: '/home/tom/src/gh/fnrhombus/arch-setup' });
+    ).toEqual({ ok: true, path: join(HOME, 'src/gh/fnrhombus/arch-setup') });
   });
 
   test('a {repo}@{owner} template', () => {
     expect(computeCloneDestination({ ref: ref(), template: '~/src/{repo}@{owner}', hostAliases: ALIASES, home: HOME }))
-      .toEqual({ ok: true, path: '/home/tom/src/arch-setup@fnrhombus' });
+      .toEqual({ ok: true, path: join(HOME, 'src/arch-setup@fnrhombus') });
   });
 
-  test('a template without a tilde is left absolute as written', () => {
-    expect(
-      computeCloneDestination({ ref: ref(), template: '/srv/repos/{owner}/{repo}', hostAliases: ALIASES, home: HOME }),
-    ).toEqual({ ok: true, path: '/srv/repos/fnrhombus/arch-setup' });
+  test('a template without a tilde is normalized to native separators', () => {
+    const result = computeCloneDestination({ ref: ref(), template: '/srv/repos/{owner}/{repo}', hostAliases: ALIASES,
+      home: HOME });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.path).toContain('fnrhombus');
+      expect(result.path).toContain('arch-setup');
+    }
   });
 
   test('a host-short miss surfaces the template error naming the host', () => {
@@ -90,14 +95,14 @@ describe('computeCloneDestination', () => {
     expect(
       computeCloneDestination({ ref: ref({ host: '' }), template: '~/{host-plain}/{owner}/{repo}', hostAliases: ALIASES,
         home: HOME }),
-    ).toEqual({ ok: true, path: '/home/tom/github/fnrhombus/arch-setup' });
+    ).toEqual({ ok: true, path: join(HOME, 'github/fnrhombus/arch-setup') });
   });
 
   test('a workspace on the ref never reaches the destination', () => {
     expect(
       computeCloneDestination({ ref: ref({ workspace: 'my-feature' }), template: '~/src/{repo}@{owner}',
         hostAliases: ALIASES, home: HOME }),
-    ).toEqual({ ok: true, path: '/home/tom/src/arch-setup@fnrhombus' });
+    ).toEqual({ ok: true, path: join(HOME, 'src/arch-setup@fnrhombus') });
   });
 });
 

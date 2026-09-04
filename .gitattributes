@@ -1,0 +1,2 @@
+# Normalize line endings on checkout so dprint check stays green on Windows.
+* text=auto eol=lf
