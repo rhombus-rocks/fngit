@@ -1,5 +1,5 @@
 import { globSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join, normalize, sep } from 'node:path';
 
 /** Expand a leading `~` against `home`, the way a shell would — on win32, `~\` is also accepted. */
 export function expandTilde(input: string, home: string): string {
@@ -7,7 +7,7 @@ export function expandTilde(input: string, home: string): string {
     return home;
   }
   if (input.startsWith('~/') || input.startsWith('~\\')) {
-    return join(home, input.slice(2));
+    return normalize(join(home, input.slice(2)));
   }
   return input;
 }
@@ -24,16 +24,20 @@ export const GLOB_MAGIC = /[*?[{]/;
  * as a match.
  */
 export function expandGlobPath(pattern: string): string[] {
-  const rootEnd = pattern.lastIndexOf(sep, pattern.search(GLOB_MAGIC));
+  // globSync expects forward slashes on every platform; find the root by
+  // scanning for the last separator (either / or \) before the first glob character.
+  const magicIdx = pattern.search(GLOB_MAGIC);
+  const beforeMagic = magicIdx >= 0 ? pattern.slice(0, magicIdx) : pattern;
+  const rootEnd = Math.max(beforeMagic.lastIndexOf('/'), beforeMagic.lastIndexOf(sep));
   if (rootEnd < 0) {
     // A relative pattern has no root to scan; entries are absolute or
     // `~`-rooted by contract.
     return [];
   }
   const root = pattern.slice(0, rootEnd) || sep;
+  const globPart = pattern.slice(rootEnd + 1).replace(/\\/g, '/');
   try {
-    return globSync(pattern.slice(rootEnd + 1), { cwd: root }).map((match) => join(root, match)).filter(isDirectory)
-      .sort();
+    return globSync(globPart, { cwd: root }).map((match) => normalize(join(root, match))).filter(isDirectory).sort();
   } catch {
     return [];
   }
