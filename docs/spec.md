@@ -55,6 +55,17 @@ template-driven destination fncode uses) before returning, so the function alway
 - **Only `clone` is decorated to start with.** Every other subcommand, and every other argument,
   passes straight through to `git` unchanged.
 
+Ruled 2026-09-03 (owner):
+
+- **Users can shadow their git install with `fngit`** — e.g. a shell alias `git` → `fngit`. So the
+  passthrough must be exact, and `fngit` must find the real `git` even when it is itself the thing
+  named `git` on `PATH` (never recurse into itself).
+- **`fngit clone somerepo ./some/path` runs git with the same args** — a second positional means
+  the user chose git's destination; nothing is decorated.
+- **`fngit clone somerepo` applies the configured path/repo naming rules** (the clone template).
+- **Cross-platform**: Linux, macOS, and Windows — paths, settings locations, process handling, and
+  CI all have to work on each.
+
 ## Code conventions
 
 - TypeScript throughout the library.
