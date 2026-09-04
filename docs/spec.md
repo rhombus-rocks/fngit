@@ -105,3 +105,9 @@ Owner's words, 2026-09-03. Saved verbatim on request; no design work has been do
 >     - install
 >   - values can be provided in args and then it won't be interactive
 >   - lib function(s) to set these settings (no interactivity, obviously)
+
+> The only thing missing from the last prompt, under the wizard questions, is
+> 'install claude-code-worktree-paths@fnrhombus-plugins? (recommended)' and 'replace calls to
+> system git?'.
+>
+> tbc, all other argument configurations should pass through to git
