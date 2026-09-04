@@ -80,6 +80,30 @@ describe('planInvocation', () => {
     expect(planInvocation(['clone', 'gh:owner/name+ws'])).toEqual({ kind: 'reject-workspace',
       input: 'gh:owner/name+ws' });
   });
+
+  test('clone of a Windows backslash-relative path — passthrough', () => {
+    expect(planInvocation(['clone', '.\\local-path'])).toEqual({ kind: 'passthrough',
+      args: ['clone', '.\\local-path'] });
+  });
+
+  test('clone of a Windows parent-relative path — passthrough', () => {
+    expect(planInvocation(['clone', '..\\sibling'])).toEqual({ kind: 'passthrough', args: ['clone', '..\\sibling'] });
+  });
+
+  test('clone of a Windows absolute backslash path — passthrough', () => {
+    expect(planInvocation(['clone', '\\server\\share'])).toEqual({ kind: 'passthrough',
+      args: ['clone', '\\server\\share'] });
+  });
+
+  test('clone of a drive-letter path — passthrough', () => {
+    expect(planInvocation(['clone', 'C:\\repos\\foo'])).toEqual({ kind: 'passthrough',
+      args: ['clone', 'C:\\repos\\foo'] });
+  });
+
+  test('clone of a UNC path — passthrough', () => {
+    expect(planInvocation(['clone', '\\\\server\\share'])).toEqual({ kind: 'passthrough',
+      args: ['clone', '\\\\server\\share'] });
+  });
 });
 
 describe('renderLocateFailure', () => {

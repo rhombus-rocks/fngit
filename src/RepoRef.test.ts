@@ -168,6 +168,37 @@ describe('parseRepoRef — error cases', () => {
   test('a `..` name segment is unparseable', () => {
     expect(parseRepoRef('sub/..').ok).toBe(false);
   });
+
+  test('a leading backslash is a Windows absolute path', () => {
+    expect(parseRepoRef('\\server\\share').ok).toBe(false);
+  });
+
+  test('a UNC path is unparseable', () => {
+    expect(parseRepoRef('\\\\server\\share').ok).toBe(false);
+  });
+
+  test('a .\\ relative path is unparseable', () => {
+    expect(parseRepoRef('.\\local-path').ok).toBe(false);
+  });
+
+  test('a ..\\ relative path is unparseable', () => {
+    expect(parseRepoRef('..\\sibling\\repo').ok).toBe(false);
+  });
+
+  test('a drive letter path is unparseable', () => {
+    expect(parseRepoRef('C:\\Users\\tom\\repo').ok).toBe(false);
+    expect(parseRepoRef('D:/repos/foo').ok).toBe(false);
+  });
+
+  test('a drive letter is rejected before the scp regex gets it', () => {
+    // C:foo looks superficially like host:path (scp form), but a single
+    // letter followed by : plus a separator is a drive letter, not a host.
+    const result = parseRepoRef('C:\\foo\\bar');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/path-like/);
+    }
+  });
 });
 
 describe('hasResolvedOwner', () => {

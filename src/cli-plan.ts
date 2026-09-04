@@ -1,12 +1,10 @@
 import { assertNever } from '@rhombus-toolkit/type-guards';
 
 import type { LocateFailure } from './LocateError.js';
-import { parseRepoRef } from './RepoRef.js';
+import { isPathLike, parseRepoRef } from './RepoRef.js';
 
 export type CliPlan = { kind: 'passthrough'; args: readonly string[]; } | { kind: 'clone'; input: string;
   cloneArgs: readonly string[]; } | { kind: 'reject-workspace'; input: string; };
-
-const PATH_LIKE_PREFIXES = ['.', '/', '~'];
 
 /**
  * Decide whether a `git` invocation is a decoratable `clone <ref>` — a bare
@@ -32,7 +30,7 @@ export function planInvocation(argv: readonly string[]): CliPlan {
 
 /** Whether `input` could name a repo reference, ruling out flags and filesystem paths up front. */
 function isDecoratable(input: string): boolean {
-  return !input.startsWith('-') && !PATH_LIKE_PREFIXES.some((prefix) => input.startsWith(prefix));
+  return !input.startsWith('-') && !isPathLike(input);
 }
 
 export interface LocateFailureRender {
