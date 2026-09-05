@@ -58,9 +58,8 @@ owner in its path, so `owner` stays empty there.
 | Field       | Default               | Meaning                                                                    |
 | ----------- | --------------------- | -------------------------------------------------------------------------- |
 | `clone`     | `false`               | Clone a `remote` result before returning, so the result is always `local`. |
-| `settings`  | none                  | Per-field overlay on whatever the settings chain supplies.                 |
-| `cwd`       | `process.cwd()`       | Root for the project settings tier.                                        |
-| `home`      | `os.homedir()`        | Root for `~` expansion and the user settings tier.                         |
+| `settings`  | none                  | Per-field overlay on whatever the config file supplies.                    |
+| `home`      | `os.homedir()`        | Root for `~` expansion and the config-file lookup.                         |
 | `gh`        | the real `gh` spawner | An `IGitHubCli` to call instead; inject a fake in tests.                   |
 | `cloneArgs` | none                  | Extra arguments for `git clone`, honoured only alongside `clone`.          |
 
@@ -191,43 +190,52 @@ same stdout/stderr, same exit code, same behavior for a signal that kills it.
 
 ### Settings
 
-`loadLocateSettings({ home, cwd })` reads the `repoSettings` block of four
-tiers, later ones winning field by field. It also accepts optional
-`managedPath`, `systemAliasesPath`, and `userAliasesPath` overrides for the
-system- and user-absolute locations below, defaulting to them — injectable so
-a test can point the chain at a temp directory instead of the real system files:
+fngit reads a shared config file at `$XDG_CONFIG_HOME/rhombus.rocks/config.{json,jsonc,toml,yaml}`
+(default `~/.config/rhombus.rocks/config.json`) — the first of those four
+extensions that exists, in that order, parsed with
+[`confbox`](https://github.com/unjs/confbox). `FNGIT_CONFIG=<path>` overrides
+the location outright, in whichever of those formats that path names.
 
-1. `<home>/.claude/settings.json`
-2. `<cwd>/.claude/settings.json`
-3. `<cwd>/.claude/settings.local.json`
-4. Managed settings (see platform table below)
+```json
+{
+  "$schema": "https://json.schemastore.org/rhombus-rocks-config.json",
+  "repos": {
+    "cloneTemplate": "~/src/{repo}@{owner}",
+    "worktreeTemplate": "~/src/{repo}@{owner}+{input}",
+    "additionalSrcDirs": ["~/.local/src", "~/code"],
+    "hostAliases": { "git.example.com": "ex" }
+  }
+}
+```
 
-It reads `cloneTemplate`, `worktreeTemplate` and `additionalSrcDirs` — the last
-accepting a single path or a list, and replacing rather than extending a lower
-tier. Every failure degrades silently: an unreadable, malformed or
-wrong-shaped file contributes nothing rather than failing the lookup.
+`repos.cloneTemplate`, `repos.worktreeTemplate` and `repos.additionalSrcDirs`
+are read exactly as before (the last accepting a single path or a list).
+`repos.branchTemplate` is read only by the `worktree-paths` Claude Code
+plugin — fngit doesn't read it, but preserves it whenever it writes this file.
+Every failure degrades silently: an unreadable, malformed, or wrong-shaped
+file (or field) contributes nothing rather than failing the lookup.
 
-Host aliases for the `{host-short}` placeholder come from a system file and
-then a user file (see platform table below), the user's keys winning.
+**Host aliases** for the `{host-short}` placeholder ship with built-in
+defaults — `github.com=gh`, `gitlab.com=gl`, `bitbucket.org=bb`,
+`codeberg.org=cb` — overridden per-host by `repos.hostAliases`. A host with
+neither a built-in default nor an override fails with an error naming
+`repos.hostAliases`.
+
+**Migration**: `~/.fngitrc` (the older, flatter JSON shape — `cloneTemplate`,
+`worktreeTemplate`, `additionalSrcDirs`, `hostAliases` at the top level, no
+`repos` nesting) is read only when the new file is absent, and only by
+`locate()`/`fngit clone`; `fngit install` moves its contents into the new
+file. Once the new file exists, `~/.fngitrc` is never consulted again.
 
 ## Platforms
 
 Linux, macOS, and Windows are supported. CI tests all three on every PR.
 
 Templates are written with forward slashes (e.g. `~/src/{repo}@{owner}`);
-expansion produces native paths via `path.join`/`path.normalize`.
-
-### Where settings come from
-
-`defaultSettingsPaths(platform, env, home)` returns the platform-specific
-locations. The function is injectable so every platform's branch is testable
-on a single machine.
-
-| File                | Linux                                                                     | macOS                                                           | Windows                                          |
-| ------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| Managed settings    | `/etc/claude-code/managed-settings.json`                                  | `/Library/Application Support/ClaudeCode/managed-settings.json` | `%ProgramData%\ClaudeCode\managed-settings.json` |
-| System host aliases | `/usr/share/fnrhombus/host-aliases.json`                                  | `/Library/Application Support/fnrhombus/host-aliases.json`      | `%ProgramData%\fnrhombus\host-aliases.json`      |
-| User host aliases   | `$XDG_DATA_HOME/fnrhombus/host-aliases.json` (default `~/.local/share/…`) | same                                                            | `%LOCALAPPDATA%\fnrhombus\host-aliases.json`     |
+expansion produces native paths via `path.join`/`path.normalize`. The config
+file's location is computed with `path.join`, so it lands at the same
+`.config/rhombus.rocks/config.json`-shaped path (native separators) on every
+platform.
 
 ## Development
 

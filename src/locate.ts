@@ -23,11 +23,9 @@ export type Located = LocalRepo | RemoteRepo;
 export interface LocateOptions {
   /** Clone a `remote` result to its destination before returning, so the result is always `local`. */
   clone?: boolean;
-  /** Per-field overlay on whatever the settings chain supplies. */
+  /** Per-field overlay on whatever the config file supplies. */
   settings?: Partial<LocateSettings>;
-  /** Root for the project settings tier; defaults to the process's working directory. */
-  cwd?: string;
-  /** Root for `~` expansion and the user settings tier; defaults to the current user's home. */
+  /** Root for `~` expansion and the config-file lookup; defaults to the current user's home. */
   home?: string;
   /** An `IGitHubCli` to call in place of the real `gh` spawner; inject a fake in tests. */
   gh?: IGitHubCli;
@@ -53,7 +51,7 @@ export async function locate(input: string, options: LocateOptions = {}): Promis
   }
 
   const home = options.home ?? homedir();
-  const settings = overlaySettings(loadLocateSettings({ home, cwd: options.cwd ?? process.cwd() }), options.settings);
+  const settings = overlaySettings(loadLocateSettings({ home }), options.settings);
   validateCloneTemplate(settings, parsed.ref);
   const gh = options.gh ?? new GitHubCli();
 
@@ -82,8 +80,8 @@ export async function locate(input: string, options: LocateOptions = {}): Promis
 function validateCloneTemplate(settings: LocateSettings, ref: RepoRef): void {
   if (settings.cloneTemplate === '') {
     throw new LocateError({ reason: 'config',
-      message: 'cloneTemplate is not configured in repoSettings; cannot resolve repo references. '
-        + 'Set repoSettings.cloneTemplate in ~/.claude/settings.json (e.g. "~/src/{repo}@{owner}")' });
+      message: 'repos.cloneTemplate is not configured; cannot resolve repo references. '
+        + 'Set it in ~/.config/rhombus.rocks/config.json (e.g. "~/src/{repo}@{owner}"), or run `fngit install`.' });
   }
   const probe = applyTemplate(settings.cloneTemplate,
     cloneTemplateVars(ref.name, ref.owner || 'owner', effectiveHost(ref), settings.hostAliases));

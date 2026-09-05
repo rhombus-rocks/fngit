@@ -1,8 +1,8 @@
-import { isDefined } from '@rhombus-toolkit/type-guards';
+import { parseJSONC, parseTOML, parseYAML } from 'confbox';
 import { readFileSync, statSync } from 'node:fs';
-import { join, posix, win32 } from 'node:path';
+import { extname, join } from 'node:path';
 
-/** Everything the locator needs from configuration, once every tier has been merged. */
+/** Everything the locator needs from configuration, once the config file (or its fallback) is loaded. */
 export interface LocateSettings {
   cloneTemplate: string;
   worktreeTemplate: string;
@@ -10,130 +10,132 @@ export interface LocateSettings {
   hostAliases: Readonly<Record<string, string>>;
 }
 
-/** The `repoSettings` fields this library reads, merged across the settings tiers. */
-export interface RepoSettings {
+/** `{host-short}` defaults, overridden per-key by `repos.hostAliases`. */
+export const BUILTIN_HOST_ALIASES: Readonly<Record<string, string>> = { 'github.com': 'gh', 'gitlab.com': 'gl',
+  'bitbucket.org': 'bb', 'codeberg.org': 'cb' };
+
+/** The directory name the shared config lives under, beneath `$XDG_CONFIG_HOME` (or `~/.config`). */
+export const CONFIG_DIR_NAME = 'rhombus.rocks';
+
+/** The accepted config file extensions, in the order they're searched — first existing file wins. */
+export const CONFIG_EXTENSIONS = ['json', 'jsonc', 'toml', 'yaml'] as const;
+
+/** The `repos` fields this library reads, once extracted from whichever source supplied them. */
+interface ReposFields {
   cloneTemplate: string;
   worktreeTemplate: string;
   additionalSrcDirs: string[];
+  hostAliases: Record<string, string>;
 }
 
-export interface LoadRepoSettingsArgs {
-  userPath: string;
-  projectPath: string;
-  localPath: string;
-  managedPath?: string;
+const EMPTY_REPOS_FIELDS: ReposFields = { cloneTemplate: '', worktreeTemplate: '', additionalSrcDirs: [],
+  hostAliases: {} };
+
+/** `$XDG_CONFIG_HOME/rhombus.rocks` (default `<home>/.config/rhombus.rocks`). */
+export function defaultConfigDir(home: string, env: Readonly<Record<string, string | undefined>>): string {
+  const xdgConfigHome = env.XDG_CONFIG_HOME;
+  return join(xdgConfigHome !== undefined && xdgConfigHome !== '' ? xdgConfigHome : join(home, '.config'),
+    CONFIG_DIR_NAME);
 }
 
-export interface LoadHostAliasesArgs {
-  systemPath: string;
-  userPath: string;
+export interface ResolveConfigPathArgs {
+  home: string;
+  env: Readonly<Record<string, string | undefined>>;
+  /** Explicit override, taking priority over `env.FNGIT_CONFIG`. */
+  configPath?: string;
 }
 
-const STRING_FIELDS = ['cloneTemplate', 'worktreeTemplate'] as const satisfies ReadonlyArray<keyof RepoSettings>;
-
-export type Platform = 'linux' | 'darwin' | 'win32';
-
-/** The three system/user paths that vary by platform. */
-export interface DefaultSettingsPaths {
-  /** Managed settings written by an administrator. */
-  managedSettings: string;
-  /** System-wide host-alias file. */
-  systemHostAliases: string;
-  /** Per-user host-alias file. */
-  userHostAliases: string;
+export interface ResolvedConfigPath {
+  path: string;
+  exists: boolean;
+  /** Whether `path` came from `configPath`/`FNGIT_CONFIG` rather than the default scan. */
+  overridden: boolean;
 }
 
 /**
- * Platform-specific default paths, injectable so tests cover all three
- * platforms on one machine. Uses posix/win32 path.join so the returned paths
- * match the target platform regardless of where the test runs.
+ * Where the shared config file is: an explicit override (`configPath`, then
+ * `FNGIT_CONFIG`) verbatim, whether or not it exists; otherwise the first of
+ * `config.json`, `config.jsonc`, `config.toml`, `config.yaml` that exists
+ * under {@link defaultConfigDir}, or `config.json` there if none do.
  */
-export function defaultSettingsPaths(platform: Platform, env: Readonly<Record<string, string | undefined>>,
-  home: string): DefaultSettingsPaths
-{
-  const pjoin = platform === 'win32' ? win32.join : posix.join;
-  switch (platform) {
-    case 'linux': {
-      return { managedSettings: '/etc/claude-code/managed-settings.json',
-        systemHostAliases: '/usr/share/fnrhombus/host-aliases.json',
-        userHostAliases: pjoin(env.XDG_DATA_HOME ?? pjoin(home, '.local/share'), 'fnrhombus/host-aliases.json') };
-    }
-    case 'darwin': {
-      return { managedSettings: '/Library/Application Support/ClaudeCode/managed-settings.json',
-        systemHostAliases: '/Library/Application Support/fnrhombus/host-aliases.json',
-        userHostAliases: pjoin(env.XDG_DATA_HOME ?? pjoin(home, '.local/share'), 'fnrhombus/host-aliases.json') };
-    }
-    case 'win32': {
-      const programData = env.ProgramData ?? 'C:\\ProgramData';
-      const localAppData = env.LOCALAPPDATA ?? pjoin(home, 'AppData', 'Local');
-      return { managedSettings: pjoin(programData, 'ClaudeCode', 'managed-settings.json'),
-        systemHostAliases: pjoin(programData, 'fnrhombus', 'host-aliases.json'),
-        userHostAliases: pjoin(localAppData, 'fnrhombus', 'host-aliases.json') };
+export function resolveConfigPath(args: ResolveConfigPathArgs): ResolvedConfigPath {
+  const override = args.configPath ?? args.env.FNGIT_CONFIG;
+  if (override !== undefined && override !== '') {
+    return { path: override, exists: isFile(override), overridden: true };
+  }
+  const dir = defaultConfigDir(args.home, args.env);
+  for (const ext of CONFIG_EXTENSIONS) {
+    const candidate = join(dir, `config.${ext}`);
+    if (isFile(candidate)) {
+      return { path: candidate, exists: true, overridden: false };
     }
   }
+  return { path: join(dir, 'config.json'), exists: false, overridden: false };
 }
 
 export interface LoadLocateSettingsArgs {
   home: string;
-  cwd: string;
-  /** Path to the managed-settings tier; defaults to the system location. Injectable so tests stay hermetic. */
-  managedPath?: string;
-  /** Path to the system host-aliases file; defaults to the system location. Injectable so tests stay hermetic. */
-  systemAliasesPath?: string;
-  /** Path to the user host-aliases file; defaults to the platform-aware location. Injectable so tests stay hermetic. */
-  userAliasesPath?: string;
-  /** Platform for defaultSettingsPaths; defaults to the current process platform. */
-  platform?: Platform;
-  /** Environment for defaultSettingsPaths; defaults to process.env. */
+  /** Defaults to `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
-}
-
-/** Read the settings chain rooted at `home` and `cwd`, plus the host-aliases layers. */
-export function loadLocateSettings(args: LoadLocateSettingsArgs): LocateSettings {
-  const platform = args.platform ?? process.platform as Platform;
-  const env = args.env ?? process.env;
-  const defaults = defaultSettingsPaths(platform, env, args.home);
-  const repoSettings = loadRepoSettings({ userPath: join(args.home, '.claude/settings.json'),
-    projectPath: join(args.cwd, '.claude/settings.json'), localPath: join(args.cwd, '.claude/settings.local.json'),
-    managedPath: args.managedPath ?? defaults.managedSettings });
-  return { ...repoSettings,
-    hostAliases: loadHostAliases({ systemPath: args.systemAliasesPath ?? defaults.systemHostAliases,
-      userPath: args.userAliasesPath ?? defaults.userHostAliases }) };
+  /** Explicit config-file path, mainly for tests; production relies on `env.FNGIT_CONFIG` or the default scan. */
+  configPath?: string;
+  /** Path to the legacy `~/.fngitrc` migration source; defaults to `<home>/.fngitrc`. */
+  legacyPath?: string;
 }
 
 /**
- * Merge the `repoSettings` block of each tier, field by field, later tiers
- * winning; anything unreadable or wrong-shaped contributes nothing rather
- * than failing the load.
+ * Load `repos.*` from the shared config file, falling back to the legacy
+ * `~/.fngitrc` (migration-only: read when the new file is absent, never
+ * merged with it) — and merge in the built-in `{host-short}` aliases.
  */
-export function loadRepoSettings(args: LoadRepoSettingsArgs): RepoSettings {
-  const merged: RepoSettings = { cloneTemplate: '', worktreeTemplate: '', additionalSrcDirs: [] };
-  const tiers = Iterator.from([args.userPath, args.projectPath, args.localPath, args.managedPath]).filter(isDefined);
-  for (const path of tiers) {
-    const tier = readRepoSettingsBlock(path);
-    for (const field of STRING_FIELDS) {
-      const value = tier[field];
-      if (typeof value === 'string') {
-        merged[field] = value;
-      }
-    }
-    const srcDirs = readSrcDirs(tier.additionalSrcDirs);
-    if (srcDirs !== null) {
-      merged.additionalSrcDirs = srcDirs;
-    }
-  }
-  return merged;
+export function loadLocateSettings(args: LoadLocateSettingsArgs): LocateSettings {
+  const env = args.env ?? process.env;
+  const resolved = resolveConfigPath({ home: args.home, env, configPath: args.configPath });
+  const repos = resolved.exists
+    ? extractReposFields(readContainer(parseConfigDocument(resolved.path), 'repos'))
+    : extractReposFields(readJsonObject(args.legacyPath ?? join(args.home, '.fngitrc')));
+  return { cloneTemplate: repos.cloneTemplate, worktreeTemplate: repos.worktreeTemplate,
+    additionalSrcDirs: repos.additionalSrcDirs, hostAliases: { ...BUILTIN_HOST_ALIASES, ...repos.hostAliases } };
 }
 
-/** Merge the system and user host-alias files, the user's keys winning. */
-export function loadHostAliases(args: LoadHostAliasesArgs): Record<string, string> {
-  return { ...readStringMap(args.systemPath), ...readStringMap(args.userPath) };
+/** Pull `container[key]` out of a parsed document, or undefined if it's missing or the wrong shape. */
+function readContainer(document: unknown, key: string): unknown {
+  if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+    return undefined;
+  }
+  return (document as Record<string, unknown>)[key];
 }
 
 /**
- * One tier's `additionalSrcDirs` in either accepted shape, or null when it
- * says nothing usable — a list carrying a non-string entry is rejected whole
- * rather than quietly searching a subset of the paths the user wrote.
+ * Per-field degrade, same rule everywhere in this library: a wrong-shaped
+ * field contributes nothing rather than dropping the whole source.
+ */
+function extractReposFields(container: unknown): ReposFields {
+  if (container === null || typeof container !== 'object' || Array.isArray(container)) {
+    return { ...EMPTY_REPOS_FIELDS };
+  }
+  const obj = container as Record<string, unknown>;
+  const result = { ...EMPTY_REPOS_FIELDS };
+  if (typeof obj.cloneTemplate === 'string') {
+    result.cloneTemplate = obj.cloneTemplate;
+  }
+  if (typeof obj.worktreeTemplate === 'string') {
+    result.worktreeTemplate = obj.worktreeTemplate;
+  }
+  const srcDirs = readSrcDirs(obj.additionalSrcDirs);
+  if (srcDirs !== null) {
+    result.additionalSrcDirs = srcDirs;
+  }
+  if (isStringRecord(obj.hostAliases)) {
+    result.hostAliases = obj.hostAliases;
+  }
+  return result;
+}
+
+/**
+ * `additionalSrcDirs` in either accepted shape, or null when it says nothing
+ * usable — a list carrying a non-string entry is rejected whole rather than
+ * quietly searching a subset of the paths configured.
  */
 function readSrcDirs(value: unknown): string[] | null {
   if (typeof value === 'string') {
@@ -145,34 +147,52 @@ function readSrcDirs(value: unknown): string[] | null {
   return value as string[];
 }
 
-function readRepoSettingsBlock(path: string): Partial<Record<keyof RepoSettings, unknown>> {
-  const parsed = readJsonObject(path);
-  const repoSettings = parsed?.repoSettings;
-  if (repoSettings === null || typeof repoSettings !== 'object' || Array.isArray(repoSettings)) {
-    return {};
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
   }
-  return repoSettings as Record<string, unknown>;
+  return Object.values(value).every((entry) => typeof entry === 'string');
 }
 
-function readStringMap(path: string): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(readJsonObject(path) ?? {}).filter(([, value]) => typeof value === 'string'),
-  ) as Record<string, string>;
+/**
+ * Parse a config file by its extension (json/jsonc/toml/yaml), or undefined if
+ * missing/unreadable/malformed. Exported for the writer, which needs the raw
+ * document (not just `repos`) to merge into.
+ */
+export function parseConfigDocument(path: string): unknown {
+  const text = readFile(path);
+  if (text === undefined) {
+    return undefined;
+  }
+  const ext = extname(path).toLowerCase().replace(/^\./, '');
+  try {
+    switch (ext) {
+      case 'toml': {
+        return parseTOML(text);
+      }
+      case 'yaml':
+      case 'yml': {
+        return parseYAML(text);
+      }
+      // json, jsonc, and anything unrecognized (e.g. a FNGIT_CONFIG override with
+      // no/an odd extension) — JSONC's parser accepts plain JSON too.
+      default: {
+        return parseJSONC(text);
+      }
+    }
+  } catch {
+    return undefined;
+  }
 }
 
 function readJsonObject(path: string): Record<string, unknown> | undefined {
-  let raw: string;
-  try {
-    if (!statSync(path).isFile()) {
-      return undefined;
-    }
-    raw = readFileSync(path, 'utf8');
-  } catch {
+  const text = readFile(path);
+  if (text === undefined) {
     return undefined;
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(text);
   } catch {
     return undefined;
   }
@@ -180,4 +200,23 @@ function readJsonObject(path: string): Record<string, unknown> | undefined {
     return undefined;
   }
   return parsed as Record<string, unknown>;
+}
+
+function readFile(path: string): string | undefined {
+  try {
+    if (!statSync(path).isFile()) {
+      return undefined;
+    }
+    return readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }

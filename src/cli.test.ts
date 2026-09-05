@@ -67,11 +67,11 @@ describe('fngit clone — decorated path', () => {
     const clonesRoot = mkdtempSync(join(tmpdir(), 'fngit-clones-'));
     const existing = join(clonesRoot, 'fnclaude@testowner');
     mkdirSync(existing, { recursive: true });
-    mkdirSync(join(home, '.claude'), { recursive: true });
+    const configDir = join(home, '.config', 'rhombus.rocks');
+    mkdirSync(configDir, { recursive: true });
     // Use forward slashes in the template — expandTilde normalizes to native separators.
     const template = `${clonesRoot.replace(/\\/g, '/')}/{repo}@{owner}`;
-    writeFileSync(join(home, '.claude', 'settings.json'),
-      JSON.stringify({ repoSettings: { cloneTemplate: template } }));
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify({ repos: { cloneTemplate: template } }));
 
     // On win32 the home dir env var is USERPROFILE, not HOME.
     const homeEnv: Record<string, string> = process.platform === 'win32' ? { USERPROFILE: home } : { HOME: home };

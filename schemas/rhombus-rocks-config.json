@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://json.schemastore.org/rhombus-rocks-config.json",
+  "title": "rhombus.rocks shared config",
+  "description": "Shared config for @rhombus.rocks/fnclaude, @rhombus.rocks/fngit, and the worktree-paths Claude Code plugin.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "repos": {
+      "type": "object",
+      "description": "Repo location and naming settings. Read by fngit and the worktree-paths plugin.",
+      "properties": {
+        "cloneTemplate": {
+          "type": "string",
+          "description": "Where fngit clones repos to. Placeholders: {repo} {owner} {host} {host-plain} {host-short}."
+        },
+        "worktreeTemplate": {
+          "type": "string",
+          "description": "Where worktrees are created. Read by fngit (search exclusion) and worktree-paths (worktree creation). Placeholders: the cloneTemplate set plus {input} {branch} {clone-path} {repo-dir} {cwd}."
+        },
+        "branchTemplate": {
+          "type": "string",
+          "description": "used by worktree-paths"
+        },
+        "additionalSrcDirs": {
+          "description": "Extra directories fngit searches for an existing clone before asking GitHub. Search-only — never a clone destination. Entries may be one-level globs (`*`; no recursive walk).",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "hostAliases": {
+          "type": "object",
+          "description": "Overrides for the {host-short} placeholder, keyed by host. Built-in defaults: github.com=gh, gitlab.com=gl, bitbucket.org=bb, codeberg.org=cb.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

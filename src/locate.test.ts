@@ -9,14 +9,11 @@ import { LocateError } from './LocateError.js';
 
 let tmpRoot: string;
 let HOME: string;
-let CWD: string;
 
 beforeEach(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'fngit-locate-'));
   HOME = join(tmpRoot, 'home');
-  CWD = join(tmpRoot, 'cwd');
   mkdirSync(HOME);
-  mkdirSync(CWD);
 });
 
 afterEach(() => {
@@ -42,7 +39,7 @@ function fakeGh(apiTable: Record<string, GhApiResult> = {}, cloneResult: GhClone
 }
 
 function options(overrides: Partial<LocateOptions> = {}): LocateOptions {
-  return { home: HOME, cwd: CWD, gh: fakeGh(),
+  return { home: HOME, gh: fakeGh(),
     settings: { cloneTemplate: '~/src/{repo}@{owner}', worktreeTemplate: '~/src/{repo}@{owner}+{input}',
       additionalSrcDirs: [], hostAliases: { 'github.com': 'gh' } }, ...overrides };
 }
