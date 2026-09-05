@@ -19,10 +19,14 @@ export interface ResolveRealGitDeps {
 /**
  * Find the real `git` binary on `PATH`, refusing to resolve back to fngit's
  * own install — the shadowing scenario a `git` alias/shim pointing at fngit
- * creates. `FNGIT_GIT`, when set, always wins outright.
+ * creates — or to fngit's own git-shim directory (`shimDir`, when given): the
+ * shim there is a plain wrapper script that re-execs `fngit`, not a symlink,
+ * so its realpath is itself and its basename is `git` — only knowing the
+ * directory itself can tell it apart from a real git install. `FNGIT_GIT`,
+ * when set, always wins outright.
  */
 export function resolveRealGit(env: Readonly<Record<string, string | undefined>>, ownPackageDir: string,
-  deps: ResolveRealGitDeps = {}): string | undefined
+  deps: ResolveRealGitDeps = {}, shimDir?: string): string | undefined
 {
   const override = env.FNGIT_GIT;
   if (override !== undefined && override !== '') {
@@ -35,6 +39,9 @@ export function resolveRealGit(env: Readonly<Record<string, string | undefined>>
   const dirs = (env.PATH ?? '').split(platform === 'win32' ? ';' : ':').filter((dir) => dir !== '');
 
   for (const dir of dirs) {
+    if (shimDir !== undefined && shimDir !== '' && isSameDir(dir, shimDir)) {
+      continue;
+    }
     for (const name of candidateNames(env, platform)) {
       const candidate = join(dir, name);
       if (!exists(candidate) || isOwnInstall(candidate, ownPackageDir, realpath)) {
@@ -44,6 +51,11 @@ export function resolveRealGit(env: Readonly<Record<string, string | undefined>>
     }
   }
   return undefined;
+}
+
+function isSameDir(a: string, b: string): boolean {
+  const normalize = (path: string): string => path.endsWith(sep) ? path.slice(0, -1) : path;
+  return normalize(a) === normalize(b);
 }
 
 /** The file names a `git` lookup should try in `dir`, given the platform's executable-resolution rules. */

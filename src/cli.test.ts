@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,5 +79,45 @@ describe('fngit clone — decorated path', () => {
 
     expect(result.stdout.trim()).toBe(existing);
     expect(result.status).toBe(0);
+  });
+});
+
+describe('fngit install', () => {
+  function tempHomeEnv(): { home: string; env: Record<string, string>; } {
+    const home = mkdtempSync(join(tmpdir(), 'fngit-install-home-'));
+    const env: Record<string, string> = process.platform === 'win32' ? { USERPROFILE: home } : { HOME: home };
+    return { home, env };
+  }
+
+  test('--yes --dry-run --no-plugin --no-shadow-git prints the plan and writes nothing', () => {
+    const { home, env } = tempHomeEnv();
+    const result = runCli(['install', '--yes', '--dry-run', '--no-plugin', '--no-shadow-git'], env);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('repos.*');
+    expect(existsSync(join(home, '.config', 'rhombus.rocks', 'config.json'))).toBe(false);
+  });
+
+  test('--yes --no-plugin --no-shadow-git writes the recommended config to the new shared location', () => {
+    const { home, env } = tempHomeEnv();
+    const result = runCli(['install', '--yes', '--no-plugin', '--no-shadow-git'], env);
+
+    expect(result.status).toBe(0);
+    const configPath = join(home, '.config', 'rhombus.rocks', 'config.json');
+    expect(existsSync(configPath)).toBe(true);
+    const doc = JSON.parse(readFileSync(configPath, 'utf8')) as { repos: { cloneTemplate: string; }; };
+    expect(doc.repos.cloneTemplate).toBe('~/src/{repo}@{owner}');
+  });
+
+  test('an unrecognized flag is a usage error, never handed to git', () => {
+    const result = runCli(['install', '--bogus-flag']);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('Usage: fngit install');
+  });
+
+  test('--help prints usage and exits 0', () => {
+    const result = runCli(['install', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: fngit install');
   });
 });

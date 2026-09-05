@@ -68,4 +68,23 @@ describe('resolveRealGit', () => {
     const deps = fakeDeps(new Set());
     expect(resolveRealGit(env, OWN_PACKAGE_DIR, deps)).toBeUndefined();
   });
+
+  test("skips a git shim living in the configured shim directory, even though it is not fngit's own install", () => {
+    const shimDir = '/home/tom/.local/share/rhombus.rocks/fngit/shims';
+    const shim = join(shimDir, 'git');
+    const realGit = join('/usr/bin', 'git');
+    const env = { PATH: [shimDir, '/usr/bin'].join(':') };
+    // The shim is a plain wrapper script, not a symlink — its realpath is itself, and its
+    // basename is "git", so only an explicit shimDir check (not SELF_BASENAMES) can skip it.
+    const deps = fakeDeps(new Set([shim, realGit]));
+    expect(resolveRealGit(env, OWN_PACKAGE_DIR, deps, shimDir)).toBe(realGit);
+  });
+
+  test('with no shimDir given, a shim-shaped path is not specially skipped', () => {
+    const shimDir = '/home/tom/.local/share/rhombus.rocks/fngit/shims';
+    const shim = join(shimDir, 'git');
+    const env = { PATH: shimDir };
+    const deps = fakeDeps(new Set([shim]));
+    expect(resolveRealGit(env, OWN_PACKAGE_DIR, deps)).toBe(shim);
+  });
 });

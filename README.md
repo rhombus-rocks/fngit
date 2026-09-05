@@ -148,6 +148,9 @@ fngit clone somerepo ./some/path  # two positionals — the user chose the
 
 `fngit` is safe to shadow your real `git` with, so every command you type
 gets `clone`'s lookup for free without changing how anything else behaves.
+`fngit install --shadow-git` (see [`fngit install`](#fngit-install)) sets this
+up for you, via a `git` shim on `PATH` rather than a shell alias — do that
+instead of the manual steps below unless you have a reason not to.
 
 Alias it in your shell:
 
@@ -180,13 +183,87 @@ skips the `PATH` walk.
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`     | The clone resolved (or already existed); its path was printed to stdout.                                                                     |
 | `1`     | `locate()` rejected with a [`LocateError`](#locateerror); its message (and, for an ambiguous result, one candidate per line) went to stderr. |
-| `2`     | The reference carried a `+workspace` suffix, which `fngit clone` doesn't support yet.                                                        |
+| `2`     | The reference carried a `+workspace` suffix, which `fngit clone` doesn't support yet; or `fngit install` was given an unrecognized argument. |
 | `126`   | fngit detected it would recurse into itself and refused to run — see [Use it as `git`](#use-it-as-git).                                      |
 | `127`   | The real `git` isn't on `PATH` (set `FNGIT_GIT` to point at it directly).                                                                    |
 | _other_ | A passed-through `git` invocation's own exit status.                                                                                         |
 
 Everything that isn't a decorated `clone` is `git`, verbatim — same flags,
 same stdout/stderr, same exit code, same behavior for a signal that kills it.
+
+### `fngit install`
+
+`fngit install` — in every shape, including an unrecognized flag — is fngit's
+own command, never passed through to `git` (a plain `fngit install` with no
+`git` equivalent would otherwise just error out of `git` itself).
+
+```sh
+fngit install                    # interactive wizard
+fngit install -y                 # never prompts — recommended values, or
+                                  # whatever's already configured, everywhere
+fngit install -y --clone-template '~/src/{repo}@{owner}' \
+  --worktree-template '~/src/{repo}@{owner}+{input}' \
+  --additional-src-dirs '~/code,~/dev' \
+  --host-alias git.example.com=ex \
+  --no-plugin --shadow-git
+fngit install --dry-run          # print the plan, write nothing
+fngit install --remove-shadow    # remove the git shim and its PATH blocks
+```
+
+| Flag                                               | Meaning                                                                                                  |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `--clone-template <t>` / `--worktree-template <t>` | Override those two templates.                                                                            |
+| `--additional-src-dirs <a,b>`                      | Comma-separated; repeatable, appending each time.                                                        |
+| `--host-alias <host>=<alias>`                      | Repeatable.                                                                                              |
+| `--plugin` / `--no-plugin`                         | Install the `worktree-paths` Claude Code plugin.                                                         |
+| `--shadow-git` / `--no-shadow-git`                 | Put a `git` shim first on `PATH` (see below).                                                            |
+| `-y`, `--yes`                                      | Never prompts — every unanswered question takes its recommended value, or whatever's already configured. |
+| `--dry-run`                                        | Print the plan (`describePlan`) instead of writing anything.                                             |
+| `--remove-shadow`                                  | Remove the shim and every PATH block it added, then exit.                                                |
+| `--help`                                           | Print usage.                                                                                             |
+
+With no flags and an interactive terminal, it prompts for whatever isn't
+already configured, showing each recommended value as the default. Non-interactive
+without `-y` and with an unanswered question is an error (exit `2`).
+
+**Shadowing git via a PATH shim** (`--shadow-git`): a `git` shim script
+(`exec fngit "$@"` on POSIX, `git.cmd` → `@fngit %*` on Windows) is written to
+`$XDG_DATA_HOME/rhombus.rocks/fngit/shims` (default
+`~/.local/share/rhombus.rocks/fngit/shims`), and an idempotent marked block
+prepending that directory to `PATH` is written to `~/.bashrc`, `~/.zshrc`, the
+fish `conf.d`, and the PowerShell profile — whichever exist. `resolveRealGit`
+skips that directory when searching `PATH`, so the shim never resolves to
+itself. `--remove-shadow` undoes both.
+
+**The plugin** (`--plugin`, on by default when `claude` is on `PATH`):
+installs `worktree-paths` from the `rhombus-rocks/claude-plugins` marketplace,
+detecting and swapping an old `claude-code-worktree-paths@fnrhombus-plugins`
+install first. Re-running `fngit install -y` is a no-op wherever nothing
+changed — settings, the shim, and the plugin state are each written only when
+they'd actually change.
+
+**Driving it programmatically**: `fngit install` is a thin CLI shell over a
+pure plan builder, exported from the package so `fnc install` (or any other
+caller) can drive the same logic without spawning a subprocess or prompting
+anyone itself:
+
+```ts
+import { buildInstallPlan, type InstallAnswers,
+  type InstallEnv } from '@rhombus.rocks/fngit';
+
+const plan = buildInstallPlan(answers, /* InstallAnswers */
+  env /* InstallEnv */);
+// plan: readonly InstallAction[] — { kind, description, ...effect-specific fields }[]
+```
+
+`resolveInstallAnswers(options, env, prompter)` turns `InstallOptions` (parsed
+CLI flags) plus an `IPrompter` into `InstallAnswers`; `buildInstallPlan`
+turns `InstallAnswers` plus `InstallEnv` (current settings, resolved config
+path, shim dir, shadow targets, plugin state) into the ordered `InstallAction[]`
+plan — write-settings, write-shim-script, write-shadow-block, sync-plugin —
+each carrying enough to execute or describe it. Also exported: `parseInstallArgs`,
+`needsPrompting`, `currentHostAliasOverrides`, `describePlan`, `buildRemoveShadowPlan`,
+the `RECOMMENDED_*` defaults, and `INSTALL_HELP`.
 
 ### Settings
 

@@ -36,6 +36,24 @@ describe('planInvocation', () => {
       cloneArgs: ['--depth', '1'] });
   });
 
+  test('install with no arguments — the install wizard, never git', () => {
+    expect(planInvocation(['install'])).toEqual({ kind: 'install',
+      options: { yes: false, dryRun: false, removeShadow: false, help: false } });
+  });
+
+  test('install with recognized flags — parsed into options', () => {
+    expect(planInvocation(['install', '--yes', '--no-plugin'])).toEqual({ kind: 'install',
+      options: { yes: true, dryRun: false, removeShadow: false, help: false, plugin: false } });
+  });
+
+  test('install with an unrecognized flag — a usage error, never handed to git', () => {
+    expect(planInvocation(['install', '--bogus-flag'])).toEqual({ kind: 'install-usage-error' });
+  });
+
+  test('install with a positional argument — also a usage error, not passthrough', () => {
+    expect(planInvocation(['install', 'some-package'])).toEqual({ kind: 'install-usage-error' });
+  });
+
   test('clone with a ref and an explicit destination — passthrough (two positionals)', () => {
     expect(planInvocation(['clone', 'fnclaude', 'mydir'])).toEqual({ kind: 'passthrough',
       args: ['clone', 'fnclaude', 'mydir'] });
