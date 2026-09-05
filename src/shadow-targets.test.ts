@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { gatherShadowTargets } from './shadow-targets.js';
+import { gatherShadowTargets, shadowTargetsFor } from './shadow-targets.js';
 
 describe('gatherShadowTargets — POSIX platforms never probe for a PowerShell profile', () => {
   test('linux: bash/zsh/fish detected via existsSync, powershell never spawned', () => {
@@ -57,5 +57,27 @@ describe('gatherShadowTargets — win32 probes pwsh, then powershell', () => {
     const targets = gatherShadowTargets('C:\\Users\\tom', { platform: 'win32', env: {}, existsSync: () => false,
       spawnPowershell: () => ({ status: null, stdout: '' }) });
     expect(targets).toEqual([]);
+  });
+});
+
+describe('shadowTargetsFor — the shell probe runs only when a shim is wanted', () => {
+  test('shim declined: the gatherer is never called and there are no targets', () => {
+    let calls = 0;
+    const targets = shadowTargetsFor(false, '/home/tom', () => {
+      calls++;
+      return [{ path: '/home/tom/.bashrc', shell: 'bash' }];
+    });
+    expect(calls).toBe(0);
+    expect(targets).toEqual([]);
+  });
+
+  test('shim wanted: the gatherer runs once for that home', () => {
+    const homes: string[] = [];
+    const targets = shadowTargetsFor(true, '/home/tom', (home) => {
+      homes.push(home);
+      return [{ path: '/home/tom/.zshrc', shell: 'zsh' }];
+    });
+    expect(homes).toEqual(['/home/tom']);
+    expect(targets).toEqual([{ path: '/home/tom/.zshrc', shell: 'zsh' }]);
   });
 });

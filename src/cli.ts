@@ -17,7 +17,7 @@ import { ClaudeCli, detectPluginState, syncPlugin } from './plugin.js';
 import { resolveRealGit } from './real-git.js';
 import { writeRepoSettings } from './settings-writer.js';
 import { loadLocateSettings, resolveConfigPath } from './settings.js';
-import { gatherShadowTargets } from './shadow-targets.js';
+import { shadowTargetsFor } from './shadow-targets.js';
 import { removeShellBlock, type ShellType, shimDir, shimFilename, shimScriptContents,
   upsertShellBlock } from './shim.js';
 
@@ -147,7 +147,7 @@ async function runInstall(options: InstallOptions): Promise<number> {
   const home = homedir();
   const resolvedConfig = resolveConfigPath({ home, env: process.env });
   const dir = shimDir(home, process.env);
-  const shadowTargets = gatherShadowTargets(home);
+  const shadowTargets = shadowTargetsFor(options.removeShadow, home);
   const claudeOnPath = commandExists('claude');
   const claudeCli = new ClaudeCli();
   const pluginState = claudeOnPath ? detectPluginState(claudeCli.listPlugins()) : 'none';
@@ -175,7 +175,7 @@ async function runInstall(options: InstallOptions): Promise<number> {
     : new ReadlinePrompter();
   try {
     const answers = await resolveInstallAnswers(options, env, prompter);
-    const actions = buildInstallPlan(answers, env);
+    const actions = buildInstallPlan(answers, { ...env, shadowTargets: shadowTargetsFor(answers.shadowGit, home) });
 
     if (options.dryRun) {
       process.stdout.write(`${describePlan(actions)}\n`);
