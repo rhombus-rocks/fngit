@@ -37,7 +37,7 @@ manual promotion step.
 | `perf:` | patch (0.0.X) | yes |
 | `docs:`, `refactor:`, `chore:`, `ci:`, `build:`, `test:`, `style:` | none | hidden |
 
-> Note: semantic-release's `@semantic-release/commit-analyzer` default rules already skip `docs:`/`refactor:`/`chore:`/`ci:`/`build:`/`test:`/`style:` — they don't bump a version and don't appear in release notes. No `releaseRules` override is needed in `.releaserc.json`, and intentionally none is configured. Compare with release-please, which couples CHANGELOG visibility with bump-eligibility and needs explicit `"hidden": true` per type.
+> Note: `.releaserc.json` sets `preset: conventionalcommits` on both the commit analyzer and the release-notes generator. The default (angular) preset cannot parse a `feat!:` / `fix!:` header at all, so a breaking commit written that way produces *no release* instead of a major. semantic-release's `@semantic-release/commit-analyzer` default rules already skip `docs:`/`refactor:`/`chore:`/`ci:`/`build:`/`test:`/`style:` — they don't bump a version and don't appear in release notes. No `releaseRules` override is needed in `.releaserc.json`, and intentionally none is configured. Compare with release-please, which couples CHANGELOG visibility with bump-eligibility and needs explicit `"hidden": true` per type.
 
 ## Test-driven changes — HARD RULE
 

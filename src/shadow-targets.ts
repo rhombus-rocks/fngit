@@ -1,3 +1,4 @@
+import type { Func } from '@rhombus-toolkit/types';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -66,4 +67,15 @@ function defaultSpawnPowershell(cmd: string): { status: number | null; stdout: s
   const result = spawnSync(cmd, ['-NoProfile', '-Command', '$PROFILE'], { encoding: 'utf8', stdio: 'pipe', input: '',
     timeout: 5000 });
   return { status: result.status, stdout: result.stdout ?? '' };
+}
+
+/**
+ * The shell targets a shim install will touch, probed only when a shim is
+ * actually wanted — on Windows the probe spawns PowerShell, seconds a declined
+ * shim must never cost.
+ */
+export function shadowTargetsFor(shimWanted: boolean, home: string,
+  gather: Func<[string], ShadowTarget[]> = gatherShadowTargets): ShadowTarget[]
+{
+  return shimWanted ? gather(home) : [];
 }
