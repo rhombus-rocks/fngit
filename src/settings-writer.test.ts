@@ -19,7 +19,7 @@ afterEach(() => {
 describe('writeRepoSettings — no existing file', () => {
   test('creates config.json under the default dir, $schema first, created: true', () => {
     const home = join(tmpRoot, 'home');
-    const result = writeRepoSettings({ home, patch: { cloneTemplate: '~/src/{repo}@{owner}' } });
+    const result = writeRepoSettings({ home, env: {}, patch: { cloneTemplate: '~/src/{repo}@{owner}' } });
 
     const expectedPath = join(home, '.config', 'rhombus.rocks', 'config.json');
     expect(result).toEqual({ path: expectedPath, created: true });
@@ -31,14 +31,14 @@ describe('writeRepoSettings — no existing file', () => {
 
   test('creates parent directories as needed', () => {
     const home = join(tmpRoot, 'nested', 'deep', 'home');
-    writeRepoSettings({ home, patch: { cloneTemplate: 'x' } });
+    writeRepoSettings({ home, env: {}, patch: { cloneTemplate: 'x' } });
     expect(parseConfigDocument(join(home, '.config', 'rhombus.rocks', 'config.json'))).toEqual({ $schema: SCHEMA_URL,
       repos: { cloneTemplate: 'x' } });
   });
 
   test('an explicit configPath override creates the file there, in its own format', () => {
     const target = join(tmpRoot, 'custom.yaml');
-    const result = writeRepoSettings({ home: join(tmpRoot, 'home'), configPath: target,
+    const result = writeRepoSettings({ home: join(tmpRoot, 'home'), env: {}, configPath: target,
       patch: { cloneTemplate: 'yaml-tpl' } });
     expect(result).toEqual({ path: target, created: true });
     const parsed = parseConfigDocument(target) as Record<string, unknown>;
@@ -53,7 +53,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, JSON.stringify({ someOtherTool: { setting: true }, repos: { cloneTemplate: 'old' } }));
 
-    const result = writeRepoSettings({ home, patch: { cloneTemplate: 'new' } });
+    const result = writeRepoSettings({ home, env: {}, patch: { cloneTemplate: 'new' } });
 
     expect(result.created).toBe(false);
     const doc = parseConfigDocument(configPath) as Record<string, unknown>;
@@ -67,7 +67,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, JSON.stringify({ repos: { branchTemplate: '{input}', cloneTemplate: 'old' } }));
 
-    writeRepoSettings({ home, patch: { cloneTemplate: 'new' } });
+    writeRepoSettings({ home, env: {}, patch: { cloneTemplate: 'new' } });
 
     const doc = parseConfigDocument(configPath) as Record<string, unknown>;
     expect((doc.repos as Record<string, unknown>).branchTemplate).toBe('{input}');
@@ -80,7 +80,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, JSON.stringify({ repos: { cloneTemplate: 'keep-me', worktreeTemplate: 'also-keep' } }));
 
-    writeRepoSettings({ home, patch: { additionalSrcDirs: ['~/code'] } });
+    writeRepoSettings({ home, env: {}, patch: { additionalSrcDirs: ['~/code'] } });
 
     const doc = parseConfigDocument(configPath) as { repos: Record<string, unknown>; };
     expect(doc.repos.cloneTemplate).toBe('keep-me');
@@ -94,7 +94,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, '[repos]\ncloneTemplate = "old"\n');
 
-    const result = writeRepoSettings({ home, patch: { worktreeTemplate: 'wt' } });
+    const result = writeRepoSettings({ home, env: {}, patch: { worktreeTemplate: 'wt' } });
 
     expect(result.path).toBe(configPath);
     expect(result.created).toBe(false);
@@ -110,7 +110,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     const configPath = join(home, '.config', 'rhombus.rocks', 'config.json');
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, JSON.stringify({ repos: {} }));
-    expect(writeRepoSettings({ home, patch: { cloneTemplate: 'x' } }).created).toBe(false);
+    expect(writeRepoSettings({ home, env: {}, patch: { cloneTemplate: 'x' } }).created).toBe(false);
   });
 
   test('hostAliases patch replaces the whole map, not a per-key merge', () => {
@@ -119,7 +119,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, JSON.stringify({ repos: { hostAliases: { 'github.com': 'gh', 'gitlab.com': 'gl' } } }));
 
-    writeRepoSettings({ home, patch: { hostAliases: { 'bitbucket.org': 'bb' } } });
+    writeRepoSettings({ home, env: {}, patch: { hostAliases: { 'bitbucket.org': 'bb' } } });
 
     const doc = parseConfigDocument(configPath) as { repos: Record<string, unknown>; };
     expect(doc.repos.hostAliases).toEqual({ 'bitbucket.org': 'bb' });
@@ -131,7 +131,7 @@ describe('writeRepoSettings — merging into an existing file', () => {
     mkdirSync(join(configPath, '..'), { recursive: true });
     writeFileSync(configPath, '{ not valid json');
 
-    writeRepoSettings({ home, patch: { cloneTemplate: 'recovered' } });
+    writeRepoSettings({ home, env: {}, patch: { cloneTemplate: 'recovered' } });
 
     const doc = parseConfigDocument(configPath) as { repos: Record<string, unknown>; };
     expect(doc.repos.cloneTemplate).toBe('recovered');

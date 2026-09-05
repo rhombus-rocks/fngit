@@ -9,8 +9,14 @@ const CLI_PATH = join(import.meta.dirname, 'cli.ts');
 function runCli(args: readonly string[],
   env: Readonly<Record<string, string>> = {}): { status: number | null; stdout: string; stderr: string; }
 {
-  const result = spawnSync(process.execPath, [CLI_PATH, ...args], { encoding: 'utf8',
-    env: { ...process.env, ...env } });
+  const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
+    encoding: 'utf8',
+    // Neutralize XDG_CONFIG_HOME/FNGIT_CONFIG so a CI runner that happens to set
+    // either (e.g. for its own caching) can't pull config resolution away from
+    // the test's HOME override — every test here relies on that isolation, and
+    // `undefined` here removes the var entirely rather than passing "undefined".
+    env: { ...process.env, XDG_CONFIG_HOME: undefined, FNGIT_CONFIG: undefined, ...env },
+  });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 

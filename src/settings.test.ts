@@ -87,7 +87,7 @@ describe('loadLocateSettings — new config file', () => {
       repos: { cloneTemplate: '~/src/{repo}@{owner}', worktreeTemplate: '~/src/{repo}@{owner}+{input}',
         additionalSrcDirs: ['~/.local/src'], hostAliases: { 'git.example.com': 'ex' } },
     });
-    const settings = loadLocateSettings({ home });
+    const settings = loadLocateSettings({ home, env: {} });
     expect(settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
     expect(settings.worktreeTemplate).toBe('~/src/{repo}@{owner}+{input}');
     expect(settings.additionalSrcDirs).toEqual(['~/.local/src']);
@@ -97,20 +97,20 @@ describe('loadLocateSettings — new config file', () => {
   test('a config.toml is parsed too', () => {
     const home = join(tmpRoot, 'home');
     write(join(home, '.config', 'rhombus.rocks', 'config.toml'), '[repos]\ncloneTemplate = "~/src/{repo}@{owner}"\n');
-    expect(loadLocateSettings({ home }).cloneTemplate).toBe('~/src/{repo}@{owner}');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
   });
 
   test('a config.yaml is parsed too', () => {
     const home = join(tmpRoot, 'home');
     write(join(home, '.config', 'rhombus.rocks', 'config.yaml'), 'repos:\n  cloneTemplate: "~/src/{repo}@{owner}"\n');
-    expect(loadLocateSettings({ home }).cloneTemplate).toBe('~/src/{repo}@{owner}');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
   });
 
   test('a config.jsonc with comments is parsed', () => {
     const home = join(tmpRoot, 'home');
     write(join(home, '.config', 'rhombus.rocks', 'config.jsonc'),
       '{\n  // comment\n  "repos": { "cloneTemplate": "~/src/{repo}@{owner}" }\n}\n');
-    expect(loadLocateSettings({ home }).cloneTemplate).toBe('~/src/{repo}@{owner}');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
   });
 
   test('a repos.hostAliases entry overrides a built-in default', () => {
@@ -118,7 +118,7 @@ describe('loadLocateSettings — new config file', () => {
     writeJson(join(home, '.config', 'rhombus.rocks', 'config.json'), {
       repos: { hostAliases: { 'github.com': 'my-gh' } },
     });
-    expect(loadLocateSettings({ home }).hostAliases['github.com']).toBe('my-gh');
+    expect(loadLocateSettings({ home, env: {} }).hostAliases['github.com']).toBe('my-gh');
   });
 
   test('unrelated top-level keys and unowned repos.* keys are ignored, not erroring', () => {
@@ -128,13 +128,13 @@ describe('loadLocateSettings — new config file', () => {
       somethingElse: { nested: true },
       repos: { cloneTemplate: '~/src/{repo}@{owner}', branchTemplate: '{input}' },
     });
-    expect(loadLocateSettings({ home }).cloneTemplate).toBe('~/src/{repo}@{owner}');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
   });
 
   test('malformed file → empty settings plus built-in aliases, not a throw', () => {
     const home = join(tmpRoot, 'home');
     write(join(home, '.config', 'rhombus.rocks', 'config.json'), '{ not valid');
-    const settings = loadLocateSettings({ home });
+    const settings = loadLocateSettings({ home, env: {} });
     expect(settings.cloneTemplate).toBe('');
     expect(settings.hostAliases).toEqual(BUILTIN_HOST_ALIASES);
   });
@@ -161,7 +161,7 @@ describe('loadLocateSettings — no new config file → falls back to ~/.fngitrc
     writeJson(join(home, '.fngitrc'), { cloneTemplate: '~/src/{repo}@{owner}',
       worktreeTemplate: '~/src/{repo}@{owner}+{input}', additionalSrcDirs: ['~/.local/src'],
       hostAliases: { 'git.example.com': 'ex' } });
-    const settings = loadLocateSettings({ home });
+    const settings = loadLocateSettings({ home, env: {} });
     expect(settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
     expect(settings.additionalSrcDirs).toEqual(['~/.local/src']);
     expect(settings.hostAliases).toEqual({ ...BUILTIN_HOST_ALIASES, 'git.example.com': 'ex' });
@@ -171,12 +171,12 @@ describe('loadLocateSettings — no new config file → falls back to ~/.fngitrc
     const home = join(tmpRoot, 'home');
     writeJson(join(home, '.fngitrc'), { cloneTemplate: 'legacy-tpl' });
     writeJson(join(home, '.config', 'rhombus.rocks', 'config.json'), { repos: { cloneTemplate: 'new-tpl' } });
-    expect(loadLocateSettings({ home }).cloneTemplate).toBe('new-tpl');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('new-tpl');
   });
 
   test('neither file present → empty settings plus built-in aliases', () => {
     const home = join(tmpRoot, 'home');
-    const settings = loadLocateSettings({ home });
+    const settings = loadLocateSettings({ home, env: {} });
     expect(settings.cloneTemplate).toBe('');
     expect(settings.worktreeTemplate).toBe('');
     expect(settings.additionalSrcDirs).toEqual([]);
@@ -186,13 +186,13 @@ describe('loadLocateSettings — no new config file → falls back to ~/.fngitrc
   test('a single-string additionalSrcDirs is normalized to a one-entry list', () => {
     const home = join(tmpRoot, 'home');
     writeJson(join(home, '.fngitrc'), { additionalSrcDirs: '~/.local/src' });
-    expect(loadLocateSettings({ home }).additionalSrcDirs).toEqual(['~/.local/src']);
+    expect(loadLocateSettings({ home, env: {} }).additionalSrcDirs).toEqual(['~/.local/src']);
   });
 
   test('a legacyPath override is honored', () => {
     const home = join(tmpRoot, 'home');
     const legacy = join(tmpRoot, 'custom-legacy.json');
     writeJson(legacy, { cloneTemplate: 'legacy-custom-tpl' });
-    expect(loadLocateSettings({ home, legacyPath: legacy }).cloneTemplate).toBe('legacy-custom-tpl');
+    expect(loadLocateSettings({ home, env: {}, legacyPath: legacy }).cloneTemplate).toBe('legacy-custom-tpl');
   });
 });
