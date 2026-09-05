@@ -14,6 +14,7 @@ export { type ReposPatch, SCHEMA_URL, writeRepoSettings, type WriteRepoSettingsA
   type WriteRepoSettingsResult } from './settings-writer.js';
 export { BUILTIN_HOST_ALIASES, CONFIG_DIR_NAME, CONFIG_EXTENSIONS, defaultConfigDir, loadLocateSettings,
   type LocateSettings, resolveConfigPath, type ResolveConfigPathArgs, type ResolvedConfigPath } from './settings.js';
+export { gatherShadowTargets, type GatherShadowTargetsDeps } from './shadow-targets.js';
 export { pathPrependCommand, removeShellBlock, type ShellType, shimDir, shimFilename, shimScriptContents,
   upsertShellBlock } from './shim.js';
 export { cloneTemplateVars, worktreeTemplateVars } from './template.js';

@@ -10,14 +10,14 @@ import { fileURLToPath } from 'node:url';
 
 import { planInvocation, renderLocateFailure } from './cli-plan.js';
 import { buildInstallPlan, buildRemoveShadowPlan, describePlan, INSTALL_HELP, type InstallAction, type InstallEnv,
-  type InstallOptions, type IPrompter, needsPrompting, resolveInstallAnswers,
-  type ShadowTarget } from './install-plan.js';
+  type InstallOptions, type IPrompter, needsPrompting, resolveInstallAnswers } from './install-plan.js';
 import { locate } from './locate.js';
 import { LocateError } from './LocateError.js';
 import { ClaudeCli, detectPluginState, syncPlugin } from './plugin.js';
 import { resolveRealGit } from './real-git.js';
 import { writeRepoSettings } from './settings-writer.js';
 import { loadLocateSettings, resolveConfigPath } from './settings.js';
+import { gatherShadowTargets } from './shadow-targets.js';
 import { removeShellBlock, type ShellType, shimDir, shimFilename, shimScriptContents,
   upsertShellBlock } from './shim.js';
 
@@ -193,38 +193,6 @@ async function runInstall(options: InstallOptions): Promise<number> {
 
 function commandExists(name: string): boolean {
   return spawnSync(name, ['--version'], { encoding: 'utf8', stdio: 'pipe' }).status === 0;
-}
-
-/** Which shell startup files exist (or are the current shell) — the PATH-prepend blocks a shim install touches. */
-function gatherShadowTargets(home: string): ShadowTarget[] {
-  const targets: ShadowTarget[] = [];
-  const shell = process.env.SHELL ?? '';
-
-  const bashrc = join(home, '.bashrc');
-  if (existsSync(bashrc) || shell.endsWith('/bash')) {
-    targets.push({ path: bashrc, shell: 'bash' });
-  }
-
-  const zshrc = join(home, '.zshrc');
-  if (existsSync(zshrc) || shell.endsWith('/zsh')) {
-    targets.push({ path: zshrc, shell: 'zsh' });
-  }
-
-  const fishConfDir = join(home, '.config', 'fish', 'conf.d');
-  if (existsSync(join(home, '.config', 'fish'))) {
-    targets.push({ path: join(fishConfDir, 'fngit.fish'), shell: 'fish' });
-  }
-
-  for (const cmd of ['pwsh', 'powershell']) {
-    const result = spawnSync(cmd, ['-NoProfile', '-Command', '$PROFILE'], { encoding: 'utf8', stdio: 'pipe',
-      timeout: 5000 });
-    if (result.status === 0 && result.stdout.trim() !== '') {
-      targets.push({ path: result.stdout.trim(), shell: 'powershell' });
-      break;
-    }
-  }
-
-  return targets;
 }
 
 async function executeActions(actions: readonly InstallAction[], claudeCli: ClaudeCli): Promise<void> {
