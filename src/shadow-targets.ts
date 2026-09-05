@@ -59,7 +59,11 @@ export function gatherShadowTargets(home: string, deps: GatherShadowTargetsDeps 
 }
 
 function defaultSpawnPowershell(cmd: string): { status: number | null; stdout: string; } {
-  const result = spawnSync(cmd, ['-NoProfile', '-Command', '$PROFILE'], { encoding: 'utf8', stdio: 'pipe',
+  // `input: ''` makes spawnSync write (nothing) then close the child's stdin —
+  // without it, a 'pipe' stdio with no input can leave stdin open on Windows,
+  // and pwsh/powershell then blocks waiting for it rather than exiting, eating
+  // the full `timeout` every time instead of returning immediately.
+  const result = spawnSync(cmd, ['-NoProfile', '-Command', '$PROFILE'], { encoding: 'utf8', stdio: 'pipe', input: '',
     timeout: 5000 });
   return { status: result.status, stdout: result.stdout ?? '' };
 }

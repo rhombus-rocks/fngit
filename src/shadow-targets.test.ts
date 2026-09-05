@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 
 import { gatherShadowTargets } from './shadow-targets.js';
 
@@ -29,7 +30,7 @@ describe('gatherShadowTargets — POSIX platforms never probe for a PowerShell p
   test('SHELL env var alone (no rc file yet) still names bash/zsh as targets', () => {
     const targets = gatherShadowTargets('/home/tom', { platform: 'linux', env: { SHELL: '/bin/zsh' },
       existsSync: () => false, spawnPowershell: () => ({ status: 0, stdout: '' }) });
-    expect(targets).toEqual([{ path: '/home/tom/.zshrc', shell: 'zsh' }]);
+    expect(targets).toEqual([{ path: join('/home/tom', '.zshrc'), shell: 'zsh' }]);
   });
 });
 
