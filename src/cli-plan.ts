@@ -1,18 +1,28 @@
 import { assertNever } from '@rhombus-toolkit/type-guards';
 
+import { type InstallOptions, parseInstallArgs } from './install-plan.js';
 import type { LocateFailure } from './LocateError.js';
 import { isPathLike, parseRepoRef } from './RepoRef.js';
 
 export type CliPlan = { kind: 'passthrough'; args: readonly string[]; } | { kind: 'clone'; input: string;
-  cloneArgs: readonly string[]; } | { kind: 'reject-workspace'; input: string; };
+  cloneArgs: readonly string[]; } | { kind: 'reject-workspace'; input: string; } | { kind: 'install';
+  options: InstallOptions; } | { kind: 'install-usage-error'; };
 
 /**
  * Decide whether a `git` invocation is a decoratable `clone <ref>` — a bare
  * reference (not a filesystem path) with no explicit destination argument of
- * its own — or should pass straight through to `git` unchanged.
+ * its own — an `install` invocation (fngit's own command in every shape;
+ * unknown options are fngit's usage error, never handed to git) — or should
+ * pass straight through to `git` unchanged.
  */
 export function planInvocation(argv: readonly string[]): CliPlan {
   const [command, input, second, ...rest] = argv;
+
+  if (command === 'install') {
+    const parsed = parseInstallArgs(argv.slice(1));
+    return parsed.ok ? { kind: 'install', options: parsed.options } : { kind: 'install-usage-error' };
+  }
+
   if (command !== 'clone' || input === undefined || !isDecoratable(input)) {
     return { kind: 'passthrough', args: argv };
   }

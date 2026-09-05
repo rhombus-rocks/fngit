@@ -85,9 +85,30 @@ export function cloneTemplateVars(repo: string, owner: string, host: string,
       const alias = hostAliases[host];
       if (alias === undefined) {
         return { ok: false,
-          error: `host ${JSON.stringify(host)} has no host-aliases entry; add one to `
-            + '~/.local/share/fnrhombus/host-aliases.json' };
+          error: `host ${JSON.stringify(host)} has neither a built-in {host-short} default nor a `
+            + 'repos.hostAliases entry; add one to ~/.config/rhombus.rocks/config.json' };
       }
       return { ok: true, value: alias };
     } };
+}
+
+/**
+ * The extra placeholders a `worktreeTemplate` may reference beyond the clone
+ * set: `{input}` `{branch}` `{clone-path}` `{repo-dir}` `{cwd}`. fngit cannot
+ * compute real values for these — they depend on the worktree request itself,
+ * which is the plugin's job, not fngit's — so each resolves to `''` here. That
+ * keeps fngit's own template validation from rejecting them as unknown, while
+ * still applying the clone set's real checks (`{host-short}` included).
+ */
+const WORKTREE_ONLY_PLACEHOLDERS = ['input', 'branch', 'clone-path', 'repo-dir', 'cwd'] as const;
+
+/** {@link cloneTemplateVars}, extended with the worktree-only placeholders — see {@link WORKTREE_ONLY_PLACEHOLDERS}. */
+export function worktreeTemplateVars(repo: string, owner: string, host: string,
+  hostAliases: Readonly<Record<string, string>>): TemplateVars
+{
+  const vars = cloneTemplateVars(repo, owner, host, hostAliases);
+  for (const placeholder of WORKTREE_ONLY_PLACEHOLDERS) {
+    vars[placeholder] = () => ({ ok: true, value: '' });
+  }
+  return vars;
 }

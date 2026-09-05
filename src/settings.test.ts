@@ -3,8 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { defaultSettingsPaths, loadHostAliases, loadLocateSettings, loadRepoSettings,
-  type LoadRepoSettingsArgs } from './settings.js';
+import { BUILTIN_HOST_ALIASES, defaultConfigDir, loadLocateSettings, resolveConfigPath } from './settings.js';
 
 let tmpRoot: string;
 
@@ -16,329 +15,184 @@ afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
-function write(path: string, body: unknown): void {
+function write(path: string, body: string): void {
   mkdirSync(join(path, '..'), { recursive: true });
-  writeFileSync(path, typeof body === 'string' ? body : JSON.stringify(body));
+  writeFileSync(path, body);
 }
 
-describe('loadRepoSettings', () => {
-  let paths: LoadRepoSettingsArgs;
+function writeJson(path: string, body: unknown): void {
+  write(path, JSON.stringify(body));
+}
 
-  beforeEach(() => {
-    paths = { userPath: join(tmpRoot, 'user.json'), projectPath: join(tmpRoot, 'project.json'),
-      localPath: join(tmpRoot, 'local.json'), managedPath: join(tmpRoot, 'managed.json') };
+describe('defaultConfigDir', () => {
+  test('defaults to <home>/.config/rhombus.rocks', () => {
+    expect(defaultConfigDir('/home/tom', {})).toBe(join('/home/tom', '.config', 'rhombus.rocks'));
   });
 
-  test('all tiers missing → empty templates and no extra dirs', () => {
-    expect(loadRepoSettings(paths)).toEqual({ cloneTemplate: '', worktreeTemplate: '', additionalSrcDirs: [] });
-  });
-
-  test('settings.json without a repoSettings block → empty', () => {
-    write(paths.userPath, { theme: 'dark' });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('');
-  });
-
-  test('unrelated keys under repoSettings are ignored', () => {
-    write(paths.userPath, { repoSettings: { somethingElse: 'x', cloneTemplate: '~/src/{repo}@{owner}' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('~/src/{repo}@{owner}');
-  });
-
-  test('worktreeTemplate is read', () => {
-    write(paths.projectPath, { repoSettings: { worktreeTemplate: '~/src/{repo}@{owner}+{input}' } });
-    expect(loadRepoSettings(paths).worktreeTemplate).toBe('~/src/{repo}@{owner}+{input}');
-  });
-
-  test('local overrides project overrides user', () => {
-    write(paths.userPath, { repoSettings: { cloneTemplate: 'user-tpl' } });
-    write(paths.projectPath, { repoSettings: { cloneTemplate: 'project-tpl' } });
-    write(paths.localPath, { repoSettings: { cloneTemplate: 'local-tpl' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('local-tpl');
-  });
-
-  test('managed wins over local', () => {
-    write(paths.localPath, { repoSettings: { cloneTemplate: 'local-tpl' } });
-    write(paths.managedPath!, { repoSettings: { cloneTemplate: 'managed-tpl' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('managed-tpl');
-  });
-
-  test('per-field merge — distinct fields from different tiers coexist', () => {
-    write(paths.userPath, { repoSettings: { cloneTemplate: 'user-clone' } });
-    write(paths.projectPath, { repoSettings: { worktreeTemplate: 'project-wt' } });
-    write(paths.localPath, { repoSettings: { additionalSrcDirs: ['/opt/src'] } });
-    expect(loadRepoSettings(paths)).toEqual({ cloneTemplate: 'user-clone', worktreeTemplate: 'project-wt',
-      additionalSrcDirs: ['/opt/src'] });
-  });
-
-  test('a field missing from a higher tier does not clobber a lower one', () => {
-    write(paths.userPath, { repoSettings: { cloneTemplate: 'user-clone' } });
-    write(paths.localPath, { repoSettings: { worktreeTemplate: 'local-wt' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('user-clone');
-  });
-
-  test('managedPath omitted → that tier is absent, lower tiers still merge', () => {
-    write(paths.userPath, { repoSettings: { cloneTemplate: 'user-tpl' } });
-    const { managedPath: _managed, ...withoutManaged } = paths;
-    expect(loadRepoSettings(withoutManaged).cloneTemplate).toBe('user-tpl');
-  });
-
-  test('malformed JSON drops that tier only', () => {
-    writeFileSync(paths.userPath, '{ not valid');
-    write(paths.projectPath, { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('project-tpl');
-  });
-
-  test('non-object root is dropped', () => {
-    write(paths.userPath, ['array', 'root']);
-    write(paths.projectPath, { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('project-tpl');
-  });
-
-  test('repoSettings that is not an object is treated as absent', () => {
-    write(paths.userPath, { repoSettings: 'a string instead of an object' });
-    write(paths.projectPath, { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('project-tpl');
-  });
-
-  test('a non-string field value drops that field only', () => {
-    write(paths.userPath, { repoSettings: { cloneTemplate: 42, worktreeTemplate: 'good' } });
-    expect(loadRepoSettings(paths)).toEqual({ cloneTemplate: '', worktreeTemplate: 'good', additionalSrcDirs: [] });
-  });
-
-  test('a directory where a file was expected is skipped', () => {
-    mkdirSync(paths.userPath);
-    write(paths.projectPath, { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('project-tpl');
+  test('honors XDG_CONFIG_HOME', () => {
+    expect(defaultConfigDir('/home/tom', { XDG_CONFIG_HOME: '/custom/config' })).toBe(
+      join('/custom/config', 'rhombus.rocks'),
+    );
   });
 });
 
-describe('loadRepoSettings — additionalSrcDirs accepts one path or a list', () => {
-  let paths: LoadRepoSettingsArgs;
-
-  beforeEach(() => {
-    paths = { userPath: join(tmpRoot, 'user.json'), projectPath: join(tmpRoot, 'project.json'),
-      localPath: join(tmpRoot, 'local.json') };
-  });
-
-  test('a single string is normalized to a one-entry list', () => {
-    write(paths.userPath, { repoSettings: { additionalSrcDirs: '~/.local/src' } });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual(['~/.local/src']);
-  });
-
-  test('a list is kept in the order written', () => {
-    write(paths.userPath, {
-      repoSettings: { additionalSrcDirs: ['~/.local/src', '/usr/local/src', '~/.cache/yay/*'] },
-    });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual(['~/.local/src', '/usr/local/src', '~/.cache/yay/*']);
-  });
-
-  test('an empty list is a real value — it does not fall back to a lower tier', () => {
-    write(paths.userPath, { repoSettings: { additionalSrcDirs: '~/.local/src' } });
-    write(paths.localPath, { repoSettings: { additionalSrcDirs: [] } });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual([]);
-  });
-
-  test('a tier that sets it replaces the lower tier wholesale', () => {
-    write(paths.userPath, { repoSettings: { additionalSrcDirs: ['~/.local/src'] } });
-    write(paths.projectPath, { repoSettings: { additionalSrcDirs: ['/opt/src'] } });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual(['/opt/src']);
-  });
-
-  test('a tier that omits it leaves the lower tier intact', () => {
-    write(paths.userPath, { repoSettings: { additionalSrcDirs: ['~/.local/src'] } });
-    write(paths.projectPath, { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual(['~/.local/src']);
-  });
-
-  test('a wrong-shaped value drops the field for that tier only', () => {
-    write(paths.userPath, { repoSettings: { additionalSrcDirs: ['~/.local/src'] } });
-    write(paths.localPath, { repoSettings: { additionalSrcDirs: 42, cloneTemplate: 'local-tpl' } });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual(['~/.local/src']);
-    expect(loadRepoSettings(paths).cloneTemplate).toBe('local-tpl');
-  });
-
-  test('a list carrying a non-string entry is rejected whole, not filtered', () => {
-    write(paths.userPath, { repoSettings: { additionalSrcDirs: ['~/.local/src', 7] } });
-    expect(loadRepoSettings(paths).additionalSrcDirs).toEqual([]);
-  });
-});
-
-describe('loadHostAliases', () => {
-  let systemPath: string;
-  let userPath: string;
-
-  beforeEach(() => {
-    systemPath = join(tmpRoot, 'system.json');
-    userPath = join(tmpRoot, 'user-aliases.json');
-  });
-
-  test('both files missing → empty', () => {
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({});
-  });
-
-  test('only the system file → reads it', () => {
-    write(systemPath, { 'github.com': 'gh' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'github.com': 'gh' });
-  });
-
-  test('only the user file → reads it', () => {
-    write(userPath, { 'gitlab.com': 'gl' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'gitlab.com': 'gl' });
-  });
-
-  test('user wins on conflict, both keys present otherwise', () => {
-    write(systemPath, { 'github.com': 'gh-sys', 'gitlab.com': 'gl' });
-    write(userPath, { 'github.com': 'gh-user', 'bitbucket.org': 'bb' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'github.com': 'gh-user', 'gitlab.com': 'gl',
-      'bitbucket.org': 'bb' });
-  });
-
-  test('malformed JSON drops that file, keeps the other', () => {
-    writeFileSync(systemPath, '{ not valid json');
-    write(userPath, { 'github.com': 'gh' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'github.com': 'gh' });
-  });
-
-  test('non-object roots are dropped', () => {
-    write(systemPath, ['github.com', 'gh']);
-    write(userPath, { 'gitlab.com': 'gl' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'gitlab.com': 'gl' });
-  });
-
-  test('null root is dropped', () => {
-    writeFileSync(systemPath, 'null');
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({});
-  });
-
-  test('a non-string value drops that key, keeps the others', () => {
-    write(systemPath, { 'github.com': 'gh', 'gitlab.com': 42, 'bitbucket.org': 'bb' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'github.com': 'gh', 'bitbucket.org': 'bb' });
-  });
-
-  test('a directory where a file was expected is skipped', () => {
-    mkdirSync(systemPath);
-    write(userPath, { 'github.com': 'gh' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'github.com': 'gh' });
-  });
-
-  test('an empty alias value is kept verbatim', () => {
-    write(systemPath, { 'github.com': '', 'gitlab.com': '  gl  ' });
-    expect(loadHostAliases({ systemPath, userPath })).toEqual({ 'github.com': '', 'gitlab.com': '  gl  ' });
-  });
-});
-
-describe('loadLocateSettings — the wired-up chain', () => {
-  // The managed tier and system host-aliases live at absolute system paths; the
-  // tests point them at tmpdir so the chain never reads the developer's real
-  // /etc/claude-code/managed-settings.json or /usr/share host-aliases file.
-  let hermetic: { managedPath: string; systemAliasesPath: string; userAliasesPath: string; };
-
-  beforeEach(() => {
-    hermetic = { managedPath: join(tmpRoot, 'no-managed.json'), systemAliasesPath: join(tmpRoot, 'no-system.json'),
-      userAliasesPath: join(tmpRoot, 'no-user-aliases.json') };
-  });
-
-  test('reads repoSettings from the user tier and aliases from the user data dir', () => {
+describe('resolveConfigPath', () => {
+  test('no override, nothing on disk → config.json at the default dir, marked absent', () => {
     const home = join(tmpRoot, 'home');
-    const cwd = join(tmpRoot, 'project');
-    mkdirSync(cwd, { recursive: true });
-    write(join(home, '.claude/settings.json'), {
-      repoSettings: { cloneTemplate: '~/src/{repo}@{owner}', additionalSrcDirs: '~/.local/src' },
+    const resolved = resolveConfigPath({ home, env: {} });
+    expect(resolved).toEqual({ path: join(home, '.config', 'rhombus.rocks', 'config.json'), exists: false,
+      overridden: false });
+  });
+
+  test('scans json, jsonc, toml, yaml in that order — first existing file wins', () => {
+    const home = join(tmpRoot, 'home');
+    const dir = join(home, '.config', 'rhombus.rocks');
+    writeJson(join(dir, 'config.toml'), {});
+    writeJson(join(dir, 'config.yaml'), {});
+    const resolved = resolveConfigPath({ home, env: {} });
+    expect(resolved.path).toBe(join(dir, 'config.toml'));
+    expect(resolved.exists).toBe(true);
+    expect(resolved.overridden).toBe(false);
+  });
+
+  test('a config.json present wins over config.jsonc even when jsonc is also present', () => {
+    const home = join(tmpRoot, 'home');
+    const dir = join(home, '.config', 'rhombus.rocks');
+    writeJson(join(dir, 'config.json'), {});
+    writeJson(join(dir, 'config.jsonc'), {});
+    expect(resolveConfigPath({ home, env: {} }).path).toBe(join(dir, 'config.json'));
+  });
+
+  test('FNGIT_CONFIG env overrides the scan, whether or not the path exists', () => {
+    const home = join(tmpRoot, 'home');
+    const explicit = join(tmpRoot, 'elsewhere', 'my-config.yaml');
+    const resolved = resolveConfigPath({ home, env: { FNGIT_CONFIG: explicit } });
+    expect(resolved).toEqual({ path: explicit, exists: false, overridden: true });
+  });
+
+  test('configPath argument outranks FNGIT_CONFIG', () => {
+    const home = join(tmpRoot, 'home');
+    const argPath = join(tmpRoot, 'arg-config.json');
+    writeJson(argPath, {});
+    const resolved = resolveConfigPath({ home, env: { FNGIT_CONFIG: '/should/not/be/used.json' },
+      configPath: argPath });
+    expect(resolved).toEqual({ path: argPath, exists: true, overridden: true });
+  });
+});
+
+describe('loadLocateSettings — new config file', () => {
+  test('reads repos.* from config.json', () => {
+    const home = join(tmpRoot, 'home');
+    writeJson(join(home, '.config', 'rhombus.rocks', 'config.json'), {
+      repos: { cloneTemplate: '~/src/{repo}@{owner}', worktreeTemplate: '~/src/{repo}@{owner}+{input}',
+        additionalSrcDirs: ['~/.local/src'], hostAliases: { 'git.example.com': 'ex' } },
     });
-    const userAliases = join(tmpRoot, 'user-data-aliases.json');
-    write(userAliases, { 'github.com': 'gh' });
-    const settings = loadLocateSettings({ home, cwd, ...hermetic, userAliasesPath: userAliases });
+    const settings = loadLocateSettings({ home, env: {} });
     expect(settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
-    expect(settings.worktreeTemplate).toBe('');
+    expect(settings.worktreeTemplate).toBe('~/src/{repo}@{owner}+{input}');
     expect(settings.additionalSrcDirs).toEqual(['~/.local/src']);
-    expect(settings.hostAliases).toEqual({ 'github.com': 'gh' });
+    expect(settings.hostAliases).toEqual({ ...BUILTIN_HOST_ALIASES, 'git.example.com': 'ex' });
   });
 
-  test('the project tier overrides the user tier, and local overrides project', () => {
+  test('a config.toml is parsed too', () => {
     const home = join(tmpRoot, 'home');
-    const cwd = join(tmpRoot, 'project');
-    write(join(home, '.claude/settings.json'), { repoSettings: { cloneTemplate: 'user-tpl' } });
-    write(join(cwd, '.claude/settings.json'), { repoSettings: { cloneTemplate: 'project-tpl' } });
-    expect(loadLocateSettings({ home, cwd, ...hermetic }).cloneTemplate).toBe('project-tpl');
-    write(join(cwd, '.claude/settings.local.json'), { repoSettings: { cloneTemplate: 'local-tpl' } });
-    expect(loadLocateSettings({ home, cwd, ...hermetic }).cloneTemplate).toBe('local-tpl');
+    write(join(home, '.config', 'rhombus.rocks', 'config.toml'), '[repos]\ncloneTemplate = "~/src/{repo}@{owner}"\n');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
   });
 
-  test('the injected managed tier outranks the local tier', () => {
+  test('a config.yaml is parsed too', () => {
     const home = join(tmpRoot, 'home');
-    const cwd = join(tmpRoot, 'project');
-    write(join(cwd, '.claude/settings.local.json'), { repoSettings: { cloneTemplate: 'local-tpl' } });
-    write(hermetic.managedPath, { repoSettings: { cloneTemplate: 'managed-tpl' } });
-    expect(loadLocateSettings({ home, cwd, ...hermetic }).cloneTemplate).toBe('managed-tpl');
+    write(join(home, '.config', 'rhombus.rocks', 'config.yaml'), 'repos:\n  cloneTemplate: "~/src/{repo}@{owner}"\n');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
   });
 
-  test('the injected system host-aliases file is read, the user file winning on conflict', () => {
+  test('a config.jsonc with comments is parsed', () => {
     const home = join(tmpRoot, 'home');
-    const cwd = join(tmpRoot, 'project');
-    mkdirSync(cwd, { recursive: true });
-    const userAliases = join(tmpRoot, 'conflict-user-aliases.json');
-    write(hermetic.systemAliasesPath, { 'github.com': 'gh-sys', 'gitlab.com': 'gl' });
-    write(userAliases, { 'github.com': 'gh-user' });
-    expect(loadLocateSettings({ home, cwd, ...hermetic, userAliasesPath: userAliases }).hostAliases).toEqual({
-      'github.com': 'gh-user',
-      'gitlab.com': 'gl',
+    write(join(home, '.config', 'rhombus.rocks', 'config.jsonc'),
+      '{\n  // comment\n  "repos": { "cloneTemplate": "~/src/{repo}@{owner}" }\n}\n');
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
+  });
+
+  test('a repos.hostAliases entry overrides a built-in default', () => {
+    const home = join(tmpRoot, 'home');
+    writeJson(join(home, '.config', 'rhombus.rocks', 'config.json'), {
+      repos: { hostAliases: { 'github.com': 'my-gh' } },
     });
+    expect(loadLocateSettings({ home, env: {} }).hostAliases['github.com']).toBe('my-gh');
   });
 
-  test('nothing configured anywhere → empty settings rather than a throw', () => {
-    const home = join(tmpRoot, 'bare-home');
-    const cwd = join(tmpRoot, 'bare-project');
-    mkdirSync(home);
-    mkdirSync(cwd);
-    const settings = loadLocateSettings({ home, cwd, ...hermetic });
+  test('unrelated top-level keys and unowned repos.* keys are ignored, not erroring', () => {
+    const home = join(tmpRoot, 'home');
+    writeJson(join(home, '.config', 'rhombus.rocks', 'config.json'), {
+      $schema: 'https://json.schemastore.org/rhombus-rocks-config.json',
+      somethingElse: { nested: true },
+      repos: { cloneTemplate: '~/src/{repo}@{owner}', branchTemplate: '{input}' },
+    });
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('~/src/{repo}@{owner}');
+  });
+
+  test('malformed file → empty settings plus built-in aliases, not a throw', () => {
+    const home = join(tmpRoot, 'home');
+    write(join(home, '.config', 'rhombus.rocks', 'config.json'), '{ not valid');
+    const settings = loadLocateSettings({ home, env: {} });
+    expect(settings.cloneTemplate).toBe('');
+    expect(settings.hostAliases).toEqual(BUILTIN_HOST_ALIASES);
+  });
+
+  test('FNGIT_CONFIG env is honored', () => {
+    const home = join(tmpRoot, 'home');
+    const explicit = join(tmpRoot, 'custom.json');
+    writeJson(explicit, { repos: { cloneTemplate: 'custom-tpl' } });
+    expect(loadLocateSettings({ home, env: { FNGIT_CONFIG: explicit } }).cloneTemplate).toBe('custom-tpl');
+  });
+
+  test('an explicit configPath argument is honored over FNGIT_CONFIG', () => {
+    const home = join(tmpRoot, 'home');
+    const explicit = join(tmpRoot, 'explicit.json');
+    writeJson(explicit, { repos: { cloneTemplate: 'explicit-tpl' } });
+    const settings = loadLocateSettings({ home, env: { FNGIT_CONFIG: '/nope.json' }, configPath: explicit });
+    expect(settings.cloneTemplate).toBe('explicit-tpl');
+  });
+});
+
+describe('loadLocateSettings — no new config file → falls back to ~/.fngitrc', () => {
+  test('reads top-level (not repos-nested) fields from ~/.fngitrc', () => {
+    const home = join(tmpRoot, 'home');
+    writeJson(join(home, '.fngitrc'), { cloneTemplate: '~/src/{repo}@{owner}',
+      worktreeTemplate: '~/src/{repo}@{owner}+{input}', additionalSrcDirs: ['~/.local/src'],
+      hostAliases: { 'git.example.com': 'ex' } });
+    const settings = loadLocateSettings({ home, env: {} });
+    expect(settings.cloneTemplate).toBe('~/src/{repo}@{owner}');
+    expect(settings.additionalSrcDirs).toEqual(['~/.local/src']);
+    expect(settings.hostAliases).toEqual({ ...BUILTIN_HOST_ALIASES, 'git.example.com': 'ex' });
+  });
+
+  test('the new file, once present, is used instead — ~/.fngitrc is never consulted', () => {
+    const home = join(tmpRoot, 'home');
+    writeJson(join(home, '.fngitrc'), { cloneTemplate: 'legacy-tpl' });
+    writeJson(join(home, '.config', 'rhombus.rocks', 'config.json'), { repos: { cloneTemplate: 'new-tpl' } });
+    expect(loadLocateSettings({ home, env: {} }).cloneTemplate).toBe('new-tpl');
+  });
+
+  test('neither file present → empty settings plus built-in aliases', () => {
+    const home = join(tmpRoot, 'home');
+    const settings = loadLocateSettings({ home, env: {} });
     expect(settings.cloneTemplate).toBe('');
     expect(settings.worktreeTemplate).toBe('');
     expect(settings.additionalSrcDirs).toEqual([]);
-    expect(settings.hostAliases).toEqual({});
-  });
-});
-
-describe('defaultSettingsPaths — per-platform locations', () => {
-  const noEnv: Record<string, string | undefined> = {};
-
-  test('linux defaults', () => {
-    const paths = defaultSettingsPaths('linux', noEnv, '/home/tom');
-    expect(paths.managedSettings).toBe('/etc/claude-code/managed-settings.json');
-    expect(paths.systemHostAliases).toBe('/usr/share/fnrhombus/host-aliases.json');
-    expect(paths.userHostAliases).toBe('/home/tom/.local/share/fnrhombus/host-aliases.json');
+    expect(settings.hostAliases).toEqual(BUILTIN_HOST_ALIASES);
   });
 
-  test('linux with XDG_DATA_HOME', () => {
-    const paths = defaultSettingsPaths('linux', { XDG_DATA_HOME: '/custom/data' }, '/home/tom');
-    expect(paths.userHostAliases).toBe('/custom/data/fnrhombus/host-aliases.json');
+  test('a single-string additionalSrcDirs is normalized to a one-entry list', () => {
+    const home = join(tmpRoot, 'home');
+    writeJson(join(home, '.fngitrc'), { additionalSrcDirs: '~/.local/src' });
+    expect(loadLocateSettings({ home, env: {} }).additionalSrcDirs).toEqual(['~/.local/src']);
   });
 
-  test('darwin defaults', () => {
-    const paths = defaultSettingsPaths('darwin', noEnv, '/Users/tom');
-    expect(paths.managedSettings).toBe('/Library/Application Support/ClaudeCode/managed-settings.json');
-    expect(paths.systemHostAliases).toBe('/Library/Application Support/fnrhombus/host-aliases.json');
-    expect(paths.userHostAliases).toBe('/Users/tom/.local/share/fnrhombus/host-aliases.json');
-  });
-
-  test('darwin with XDG_DATA_HOME', () => {
-    const paths = defaultSettingsPaths('darwin', { XDG_DATA_HOME: '/custom/data' }, '/Users/tom');
-    expect(paths.userHostAliases).toBe('/custom/data/fnrhombus/host-aliases.json');
-  });
-
-  test('win32 defaults', () => {
-    const paths = defaultSettingsPaths('win32', noEnv, 'C:\\Users\\tom');
-    expect(paths.managedSettings).toMatch(/ProgramData.*ClaudeCode.*managed-settings\.json$/);
-    expect(paths.systemHostAliases).toMatch(/ProgramData.*fnrhombus.*host-aliases\.json$/);
-    expect(paths.userHostAliases).toMatch(/AppData.*Local.*fnrhombus.*host-aliases\.json$/);
-  });
-
-  test('win32 with ProgramData and LOCALAPPDATA', () => {
-    const env = { ProgramData: 'D:\\PData', LOCALAPPDATA: 'D:\\AppLocal' };
-    const paths = defaultSettingsPaths('win32', env, 'C:\\Users\\tom');
-    expect(paths.managedSettings).toContain('D:');
-    expect(paths.managedSettings).toContain('ClaudeCode');
-    expect(paths.systemHostAliases).toContain('D:');
-    expect(paths.systemHostAliases).toContain('fnrhombus');
-    expect(paths.userHostAliases).toContain('D:');
-    expect(paths.userHostAliases).toContain('fnrhombus');
+  test('a legacyPath override is honored', () => {
+    const home = join(tmpRoot, 'home');
+    const legacy = join(tmpRoot, 'custom-legacy.json');
+    writeJson(legacy, { cloneTemplate: 'legacy-custom-tpl' });
+    expect(loadLocateSettings({ home, env: {}, legacyPath: legacy }).cloneTemplate).toBe('legacy-custom-tpl');
   });
 });

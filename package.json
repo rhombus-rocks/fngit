@@ -7,7 +7,8 @@
     "node": ">=22"
   },
   "files": [
-    "dist"
+    "dist",
+    "schemas"
   ],
   "bin": {
     "fngit": "./dist/cli.js"
@@ -27,13 +28,15 @@
   },
   "dependencies": {
     "@rhombus-toolkit/type-guards": "^3.1.0",
-    "@rhombus-toolkit/types": "^1.0.1"
+    "@rhombus-toolkit/types": "^1.0.1",
+    "confbox": "^0.3.1"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
     "@types/node": "^26.4.1",
     "dprint": "^0.57.1",
     "eslint": "^10.9.1",
+    "json-schema-to-ts": "^3.1.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0"
   },

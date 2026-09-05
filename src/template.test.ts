@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker, type TemplateVars } from './template.js';
+import { applyTemplate, cloneTemplateVars, deriveWorktreeMarker, type TemplateVars,
+  worktreeTemplateVars } from './template.js';
 
 const ok = (value: string) => ({ ok: true as const, value });
 
@@ -89,6 +90,30 @@ describe('cloneTemplateVars', () => {
   test('every placeholder together', () => {
     const vars = cloneTemplateVars('arch-setup', 'fnrhombus', 'github.com', { 'github.com': 'gh' });
     expect(applyTemplate('~/src/{host-short}/{owner}/{repo}', vars)).toEqual(ok('~/src/gh/fnrhombus/arch-setup'));
+  });
+});
+
+describe('worktreeTemplateVars', () => {
+  test('accepts every clone-template placeholder plus input, branch, clone-path, repo-dir, cwd', () => {
+    const vars = worktreeTemplateVars('myrepo', 'myorg', 'github.com', { 'github.com': 'gh' });
+    const result = applyTemplate('~/src/{host-short}/{owner}/{repo}+{input}-{branch}-{clone-path}-{repo-dir}-{cwd}',
+      vars);
+    expect(result.ok).toBe(true);
+  });
+
+  test('a {host-short} miss still errors — the extra placeholders do not weaken that check', () => {
+    const vars = worktreeTemplateVars('r', 'o', 'unaliased.example', {});
+    const result = applyTemplate('{host-short}/{input}', vars);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('unaliased.example');
+    }
+  });
+
+  test('an unknown placeholder outside the accepted set still errors', () => {
+    const vars = worktreeTemplateVars('r', 'o', 'github.com', { 'github.com': 'gh' });
+    const result = applyTemplate('{bogus}', vars);
+    expect(result.ok).toBe(false);
   });
 });
 

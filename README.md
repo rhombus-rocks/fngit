@@ -58,9 +58,8 @@ owner in its path, so `owner` stays empty there.
 | Field       | Default               | Meaning                                                                    |
 | ----------- | --------------------- | -------------------------------------------------------------------------- |
 | `clone`     | `false`               | Clone a `remote` result before returning, so the result is always `local`. |
-| `settings`  | none                  | Per-field overlay on whatever the settings chain supplies.                 |
-| `cwd`       | `process.cwd()`       | Root for the project settings tier.                                        |
-| `home`      | `os.homedir()`        | Root for `~` expansion and the user settings tier.                         |
+| `settings`  | none                  | Per-field overlay on whatever the config file supplies.                    |
+| `home`      | `os.homedir()`        | Root for `~` expansion and the config-file lookup.                         |
 | `gh`        | the real `gh` spawner | An `IGitHubCli` to call instead; inject a fake in tests.                   |
 | `cloneArgs` | none                  | Extra arguments for `git clone`, honoured only alongside `clone`.          |
 
@@ -149,6 +148,9 @@ fngit clone somerepo ./some/path  # two positionals — the user chose the
 
 `fngit` is safe to shadow your real `git` with, so every command you type
 gets `clone`'s lookup for free without changing how anything else behaves.
+`fngit install --shadow-git` (see [`fngit install`](#fngit-install)) sets this
+up for you, via a `git` shim on `PATH` rather than a shell alias — do that
+instead of the manual steps below unless you have a reason not to.
 
 Alias it in your shell:
 
@@ -181,7 +183,7 @@ skips the `PATH` walk.
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`     | The clone resolved (or already existed); its path was printed to stdout.                                                                     |
 | `1`     | `locate()` rejected with a [`LocateError`](#locateerror); its message (and, for an ambiguous result, one candidate per line) went to stderr. |
-| `2`     | The reference carried a `+workspace` suffix, which `fngit clone` doesn't support yet.                                                        |
+| `2`     | The reference carried a `+workspace` suffix, which `fngit clone` doesn't support yet; or `fngit install` was given an unrecognized argument. |
 | `126`   | fngit detected it would recurse into itself and refused to run — see [Use it as `git`](#use-it-as-git).                                      |
 | `127`   | The real `git` isn't on `PATH` (set `FNGIT_GIT` to point at it directly).                                                                    |
 | _other_ | A passed-through `git` invocation's own exit status.                                                                                         |
@@ -189,45 +191,128 @@ skips the `PATH` walk.
 Everything that isn't a decorated `clone` is `git`, verbatim — same flags,
 same stdout/stderr, same exit code, same behavior for a signal that kills it.
 
+### `fngit install`
+
+`fngit install` — in every shape, including an unrecognized flag — is fngit's
+own command, never passed through to `git` (a plain `fngit install` with no
+`git` equivalent would otherwise just error out of `git` itself).
+
+```sh
+fngit install                    # interactive wizard
+fngit install -y                 # never prompts — recommended values, or
+                                  # whatever's already configured, everywhere
+fngit install -y --clone-template '~/src/{repo}@{owner}' \
+  --worktree-template '~/src/{repo}@{owner}+{input}' \
+  --additional-src-dirs '~/code,~/dev' \
+  --host-alias git.example.com=ex \
+  --no-plugin --shadow-git
+fngit install --dry-run          # print the plan, write nothing
+fngit install --remove-shadow    # remove the git shim and its PATH blocks
+```
+
+| Flag                                               | Meaning                                                                                                  |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `--clone-template <t>` / `--worktree-template <t>` | Override those two templates.                                                                            |
+| `--additional-src-dirs <a,b>`                      | Comma-separated; repeatable, appending each time.                                                        |
+| `--host-alias <host>=<alias>`                      | Repeatable.                                                                                              |
+| `--plugin` / `--no-plugin`                         | Install the `worktree-paths` Claude Code plugin.                                                         |
+| `--shadow-git` / `--no-shadow-git`                 | Put a `git` shim first on `PATH` (see below).                                                            |
+| `-y`, `--yes`                                      | Never prompts — every unanswered question takes its recommended value, or whatever's already configured. |
+| `--dry-run`                                        | Print the plan (`describePlan`) instead of writing anything.                                             |
+| `--remove-shadow`                                  | Remove the shim and every PATH block it added, then exit.                                                |
+| `--help`                                           | Print usage.                                                                                             |
+
+With no flags and an interactive terminal, it prompts for whatever isn't
+already configured, showing each recommended value as the default. Non-interactive
+without `-y` and with an unanswered question is an error (exit `2`).
+
+**Shadowing git via a PATH shim** (`--shadow-git`): a `git` shim script
+(`exec fngit "$@"` on POSIX, `git.cmd` → `@fngit %*` on Windows) is written to
+`$XDG_DATA_HOME/rhombus.rocks/fngit/shims` (default
+`~/.local/share/rhombus.rocks/fngit/shims`), and an idempotent marked block
+prepending that directory to `PATH` is written to `~/.bashrc`, `~/.zshrc`, the
+fish `conf.d`, and the PowerShell profile — whichever exist. `resolveRealGit`
+skips that directory when searching `PATH`, so the shim never resolves to
+itself. `--remove-shadow` undoes both.
+
+**The plugin** (`--plugin`, on by default when `claude` is on `PATH`):
+installs `worktree-paths` from the `rhombus-rocks/claude-plugins` marketplace,
+detecting and swapping an old `claude-code-worktree-paths@fnrhombus-plugins`
+install first. Re-running `fngit install -y` is a no-op wherever nothing
+changed — settings, the shim, and the plugin state are each written only when
+they'd actually change.
+
+**Driving it programmatically**: `fngit install` is a thin CLI shell over a
+pure plan builder, exported from the package so `fnc install` (or any other
+caller) can drive the same logic without spawning a subprocess or prompting
+anyone itself:
+
+```ts
+import { buildInstallPlan, type InstallAnswers,
+  type InstallEnv } from '@rhombus.rocks/fngit';
+
+const plan = buildInstallPlan(answers, /* InstallAnswers */
+  env /* InstallEnv */);
+// plan: readonly InstallAction[] — { kind, description, ...effect-specific fields }[]
+```
+
+`resolveInstallAnswers(options, env, prompter)` turns `InstallOptions` (parsed
+CLI flags) plus an `IPrompter` into `InstallAnswers`; `buildInstallPlan`
+turns `InstallAnswers` plus `InstallEnv` (current settings, resolved config
+path, shim dir, shadow targets, plugin state) into the ordered `InstallAction[]`
+plan — write-settings, write-shim-script, write-shadow-block, sync-plugin —
+each carrying enough to execute or describe it. Also exported: `parseInstallArgs`,
+`needsPrompting`, `currentHostAliasOverrides`, `describePlan`, `buildRemoveShadowPlan`,
+the `RECOMMENDED_*` defaults, and `INSTALL_HELP`.
+
 ### Settings
 
-`loadLocateSettings({ home, cwd })` reads the `repoSettings` block of four
-tiers, later ones winning field by field. It also accepts optional
-`managedPath`, `systemAliasesPath`, and `userAliasesPath` overrides for the
-system- and user-absolute locations below, defaulting to them — injectable so
-a test can point the chain at a temp directory instead of the real system files:
+fngit reads a shared config file at `$XDG_CONFIG_HOME/rhombus.rocks/config.{json,jsonc,toml,yaml}`
+(default `~/.config/rhombus.rocks/config.json`) — the first of those four
+extensions that exists, in that order, parsed with
+[`confbox`](https://github.com/unjs/confbox). `FNGIT_CONFIG=<path>` overrides
+the location outright, in whichever of those formats that path names.
 
-1. `<home>/.claude/settings.json`
-2. `<cwd>/.claude/settings.json`
-3. `<cwd>/.claude/settings.local.json`
-4. Managed settings (see platform table below)
+```json
+{
+  "$schema": "https://json.schemastore.org/rhombus-rocks-config.json",
+  "repos": {
+    "cloneTemplate": "~/src/{repo}@{owner}",
+    "worktreeTemplate": "~/src/{repo}@{owner}+{input}",
+    "additionalSrcDirs": ["~/.local/src", "~/code"],
+    "hostAliases": { "git.example.com": "ex" }
+  }
+}
+```
 
-It reads `cloneTemplate`, `worktreeTemplate` and `additionalSrcDirs` — the last
-accepting a single path or a list, and replacing rather than extending a lower
-tier. Every failure degrades silently: an unreadable, malformed or
-wrong-shaped file contributes nothing rather than failing the lookup.
+`repos.cloneTemplate`, `repos.worktreeTemplate` and `repos.additionalSrcDirs`
+are read exactly as before (the last accepting a single path or a list).
+`repos.branchTemplate` is read only by the `worktree-paths` Claude Code
+plugin — fngit doesn't read it, but preserves it whenever it writes this file.
+Every failure degrades silently: an unreadable, malformed, or wrong-shaped
+file (or field) contributes nothing rather than failing the lookup.
 
-Host aliases for the `{host-short}` placeholder come from a system file and
-then a user file (see platform table below), the user's keys winning.
+**Host aliases** for the `{host-short}` placeholder ship with built-in
+defaults — `github.com=gh`, `gitlab.com=gl`, `bitbucket.org=bb`,
+`codeberg.org=cb` — overridden per-host by `repos.hostAliases`. A host with
+neither a built-in default nor an override fails with an error naming
+`repos.hostAliases`.
+
+**Migration**: `~/.fngitrc` (the older, flatter JSON shape — `cloneTemplate`,
+`worktreeTemplate`, `additionalSrcDirs`, `hostAliases` at the top level, no
+`repos` nesting) is read only when the new file is absent, and only by
+`locate()`/`fngit clone`; `fngit install` moves its contents into the new
+file. Once the new file exists, `~/.fngitrc` is never consulted again.
 
 ## Platforms
 
 Linux, macOS, and Windows are supported. CI tests all three on every PR.
 
 Templates are written with forward slashes (e.g. `~/src/{repo}@{owner}`);
-expansion produces native paths via `path.join`/`path.normalize`.
-
-### Where settings come from
-
-`defaultSettingsPaths(platform, env, home)` returns the platform-specific
-locations. The function is injectable so every platform's branch is testable
-on a single machine.
-
-| File                | Linux                                                                     | macOS                                                           | Windows                                          |
-| ------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| Managed settings    | `/etc/claude-code/managed-settings.json`                                  | `/Library/Application Support/ClaudeCode/managed-settings.json` | `%ProgramData%\ClaudeCode\managed-settings.json` |
-| System host aliases | `/usr/share/fnrhombus/host-aliases.json`                                  | `/Library/Application Support/fnrhombus/host-aliases.json`      | `%ProgramData%\fnrhombus\host-aliases.json`      |
-| User host aliases   | `$XDG_DATA_HOME/fnrhombus/host-aliases.json` (default `~/.local/share/…`) | same                                                            | `%LOCALAPPDATA%\fnrhombus\host-aliases.json`     |
+expansion produces native paths via `path.join`/`path.normalize`. The config
+file's location is computed with `path.join`, so it lands at the same
+`.config/rhombus.rocks/config.json`-shaped path (native separators) on every
+platform.
 
 ## Development
 
